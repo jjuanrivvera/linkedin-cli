@@ -186,7 +186,7 @@ func (d *deps) getAPIClient() (*api.Client, *config.Config, error) {
 		api.WithDryRun(d.gf.dryRun, d.stdout()),
 		api.WithUserAgent(os.Getenv("LINKEDIN_USER_AGENT")),
 		api.WithPacer(pacer),
-		api.WithCookies(cookieSource(store, profileName)),
+		api.WithCookies(cookieSource(store, profileName, d.gf.dryRun)),
 	}
 
 	c := d.newClient(voyagerBase, webBase, opts...)
@@ -196,9 +196,19 @@ func (d *deps) getAPIClient() (*api.Client, *config.Config, error) {
 	return c, cfg, nil
 }
 
+// Dry-run cookie placeholders. A --dry-run is a fully offline preview that must work WITHOUT a
+// stored session, so a missing session yields these instead of an error. printCurl redacts them to
+// "REDACTED" anyway (unless --show-token), matching the placeholder intent.
+const (
+	dryRunLiAtPlaceholder     = "<REDACTED>"
+	dryRunJSessionPlaceholder = `"<REDACTED>"`
+)
+
 // cookieSource returns a CookieFunc that resolves the borrowed session: env LI_AT/JSESSIONID
-// (for headless use) take precedence, else the keyring-stored pair for the profile.
-func cookieSource(store auth.Store, profileName string) api.CookieFunc {
+// (for headless use) take precedence, else the keyring-stored pair for the profile. When dryRun is
+// set, a missing session is NOT an error — placeholder cookies keep the offline curl preview
+// working before the user has authenticated.
+func cookieSource(store auth.Store, profileName string, dryRun bool) api.CookieFunc {
 	return func(_ context.Context) (string, string, error) {
 		if liAt := os.Getenv("LI_AT"); liAt != "" {
 			js := os.Getenv("JSESSIONID")
@@ -210,6 +220,9 @@ func cookieSource(store auth.Store, profileName string) api.CookieFunc {
 		raw, err := store.Get(profileName)
 		if err != nil {
 			if errors.Is(err, auth.ErrNotFound) {
+				if dryRun {
+					return dryRunLiAtPlaceholder, dryRunJSessionPlaceholder, nil
+				}
 				return "", "", fmt.Errorf("no LinkedIn session stored for profile %q — run "+
 					"`linkedin auth --cookie-from-browser <chrome|brave|firefox>` or set LI_AT/JSESSIONID", profileName)
 			}

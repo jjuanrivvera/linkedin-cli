@@ -27,4 +27,10 @@ All notable changes to this project are documented here. The format follows
   hatch), `version`, `update`, `mcp`, `agent guard`; output `-o table|json|yaml|csv|id`, `--jq`,
   `--dry-run`.
 
+### Fixed
+- `--dry-run` now works without a stored session (supplies redacted placeholder cookies instead of
+  erroring) and previews `--location` searches fully offline (prints the typeahead curl it would
+  send, then the job-search curl with a `geoId:<GEO_ID>` placeholder) — no authentication or live
+  geo resolution required.
+
 [Unreleased]: https://github.com/jjuanrivvera/linkedin-cli/commits/develop

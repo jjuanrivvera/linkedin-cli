@@ -33,6 +33,11 @@ type SearchResult struct {
 // defaultCount is the Voyager job-search page size the web client uses.
 const defaultCount = 25
 
+// GeoIDPlaceholder stands in for a resolved geoId during a --location dry-run, where the geo
+// typeahead can't run offline. It is kept literal (not percent-encoded) in the previewed
+// job-search curl so a human sees locationUnion:(geoId:<GEO_ID>).
+const GeoIDPlaceholder = "<GEO_ID>"
+
 // SearchJobs runs one page of a job search (start/count) and returns the parsed page + raw JSON.
 func (c *Client) SearchJobs(ctx context.Context, f SearchFilters, start, count int) (*SearchResult, error) {
 	if count <= 0 {
@@ -147,7 +152,13 @@ func buildQueryBlob(f SearchFilters) string {
 		parts = append(parts, voyager.QueryKeywords+":"+escapeValue(f.Keywords))
 	}
 	if f.GeoID != "" {
-		parts = append(parts, voyager.QueryLocationUnion+":("+voyager.QueryGeoID+":"+escapeValue(f.GeoID)+")")
+		geo := escapeValue(f.GeoID)
+		if f.GeoID == GeoIDPlaceholder {
+			// Dry-run placeholder: keep it human-readable in the previewed curl (a real geoId is
+			// numeric and never equals this sentinel, so non-dry-run behavior is unchanged).
+			geo = f.GeoID
+		}
+		parts = append(parts, voyager.QueryLocationUnion+":("+voyager.QueryGeoID+":"+geo+")")
 	}
 	if sel := buildSelectedFilters(f); sel != "" {
 		parts = append(parts, voyager.QuerySelectedTypes+":("+sel+")")

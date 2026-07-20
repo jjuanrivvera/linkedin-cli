@@ -81,6 +81,44 @@ func TestJobsSearch_DryRun(t *testing.T) {
 	assert.Contains(t, out, "workplaceType:List(2)")
 }
 
+// TestJobsSearch_DryRunNoSession proves a --dry-run is a fully offline preview that needs NO stored
+// session: an EMPTY keyring (and no LI_AT/JSESSIONID env) still prints a redacted curl, exits 0,
+// and makes zero HTTP calls. Bug A regression guard.
+func TestJobsSearch_DryRunNoSession(t *testing.T) {
+	var hits int
+	e := newEnv(t, func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.WriteHeader(500)
+	})
+	t.Setenv("LI_AT", "")      // no headless session either
+	t.Setenv("JSESSIONID", "") // keyring stays empty (fakeStore has no entry)
+	out, _, err := e.run("jobs", "search", "--keywords", "go", "--remote", "--dry-run")
+	require.NoError(t, err)
+	assert.Contains(t, out, "voyagerJobsDashJobCards")
+	assert.Contains(t, out, "Cookie: li_at=REDACTED; JSESSIONID=REDACTED")
+	assert.NotContains(t, out, "no LinkedIn session stored")
+	assert.Equal(t, 0, hits, "dry-run must make no real HTTP request")
+}
+
+// TestJobsSearch_LocationDryRun proves a --location --dry-run previews offline: it prints the
+// typeahead curl it WOULD send AND the job-search curl with a placeholder geoId, without resolving
+// a real geo and without erroring "no geo match". Bug B regression guard.
+func TestJobsSearch_LocationDryRun(t *testing.T) {
+	var hits int
+	e := newEnv(t, func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.WriteHeader(500)
+	})
+	out, _, err := e.run("jobs", "search", "--keywords", "go", "--location", "Colombia", "--dry-run")
+	require.NoError(t, err)
+	assert.Contains(t, out, "typeaheadHits")           // (1) the typeahead curl for X
+	assert.Contains(t, out, "query=Colombia")          // typeahead queries the raw name
+	assert.Contains(t, out, "voyagerJobsDashJobCards") // (2) the job-search curl
+	assert.Contains(t, out, "locationUnion:(geoId:<GEO_ID>)")
+	assert.NotContains(t, out, "no geo match")
+	assert.Equal(t, 0, hits, "location dry-run must make no real HTTP request")
+}
+
 func TestJobsGet_JSON(t *testing.T) {
 	e := newEnv(t, router())
 	out, _, err := e.run("jobs", "get", "1", "-o", "json")

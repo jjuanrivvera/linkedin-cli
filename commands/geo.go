@@ -65,6 +65,12 @@ func (d *deps) resolveLocation(cmd *cobra.Command, c *api.Client, name string) (
 	if err != nil {
 		return "", err
 	}
+	if d.gf.dryRun {
+		// A dry-run is a fully offline preview: the geo typeahead can't be resolved here (ResolveGeo
+		// already printed the typeahead curl it WOULD send), so use a placeholder geoId and don't
+		// error. The job-search curl then previews with locationUnion:(geoId:<GEO_ID>).
+		return api.GeoIDPlaceholder, nil
+	}
 	if len(hits) == 0 {
 		return "", fmt.Errorf("no geo match for %q — try a broader name (e.g. a city or country)", name)
 	}
