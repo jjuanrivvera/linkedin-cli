@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "linkedin",
+  "owner": { "name": "jjuanrivvera", "url": "https://github.com/jjuanrivvera" },
+  "plugins": [
+    {
+      "name": "linkedin-cli",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "Read-only LinkedIn job search via the unofficial Voyager API.",
+      "homepage": "https://github.com/jjuanrivvera/linkedin-cli",
+      "keywords": ["linkedin", "jobs", "job-search", "cli", "ai-agent"]
+    }
+  ]
+}

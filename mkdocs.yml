@@ -1,0 +1,20 @@
+site_name: linkedin
+site_description: A read-only, agent-friendly CLI for LinkedIn job search (unofficial Voyager API)
+site_url: https://jjuanrivvera.github.io/linkedin-cli/
+repo_url: https://github.com/jjuanrivvera/linkedin-cli
+repo_name: jjuanrivvera/linkedin-cli
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle: { icon: material/brightness-7, name: Dark mode }
+    - scheme: slate
+      primary: indigo
+      toggle: { icon: material/brightness-4, name: Light mode }
+  features: [navigation.sections, content.code.copy]
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Command reference: commands/linkedin.md
+markdown_extensions: [admonition, pymdownx.superfences, pymdownx.highlight]

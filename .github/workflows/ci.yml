@@ -1,0 +1,19 @@
+# CI — delegates to the fleet-canonical reusable workflow in jjuanrivvera/.github.
+# Change fleet-wide CI policy there, not here. Repo-specific inputs only live below.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: jjuanrivvera/.github/.github/workflows/go-ci.yml@main
+    with:
+      coverage-threshold: "80"
+      run-gosec: true
+      run-docs-check: true

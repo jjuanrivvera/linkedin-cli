@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "linkedin-cli",
+  "version": "0.1.0",
+  "description": "Read-only LinkedIn job search via the unofficial Voyager API — search jobs, fetch detail, look up companies, resolve geoIds. Machine-first (JSON/YAML/CSV/MCP). Unofficial; ban-safety on by default.",
+  "author": { "name": "jjuanrivvera", "url": "https://github.com/jjuanrivvera" },
+  "homepage": "https://github.com/jjuanrivvera/linkedin-cli",
+  "repository": "https://github.com/jjuanrivvera/linkedin-cli",
+  "license": "MIT",
+  "skills": "./skills",
+  "keywords": ["linkedin", "jobs", "job-search", "voyager", "cli", "ai-agent"]
+}

@@ -1,0 +1,122 @@
+# DECISIONS — pinned LinkedIn Voyager API assumptions
+
+One line each: question → decision → why. Read back every iteration; never silently re-decide.
+
+LinkedIn publishes **no** official OpenAPI/llms.txt/Postman collection for Voyager — it is an
+internal, unofficial API. Endpoints/headers below come from the cliwright build brief plus
+community reverse-engineering of the linkedin.com web client. **No live LinkedIn request was made
+during this build; everything is exercised against `httptest` fakes.**
+
+## Endpoints
+
+1. **Job search** → `GET /voyager/api/voyagerJobsDashJobCards?decorationId=…&q=jobSearch&start=&count=25&query=(…)`.
+   The `query=(...)` is a Rest.li blob using bare `(),:` and `List(...)`. Why: it is the endpoint
+   the web client's job search calls.
+2. **Job detail** → `GET /voyager/api/jobs/jobPostings/{id}?decorationId=…`. This is where the
+   TRUSTWORTHY fields live (workRemoteAllowed/workplaceTypes, listedAt, applyMethod/companyApplyUrl,
+   description.text, company URN).
+3. **Company** → `GET /voyager/api/organization/companies?q=universalName&universalName=<slug>&decorationId=…`.
+4. **Geo typeahead** → `GET https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO&geoTypes=POPULATED_PLACE&query=<name>` → `[{id, displayName}]`. UNAUTHENTICATED (jobs-guest),
+   so it is the low-risk probe used by `doctor --live`. "remote" is NOT a geo — it is
+   `workplaceType:List(2)`.
+
+## Auth — borrow the browser session (cookie auth)
+
+5. **Cookie auth, not a token** → extract `li_at` (session) + `JSESSIONID` (value looks like
+   `"ajax:123..."` WITH quotes) for `.linkedin.com` from the user's browser via
+   `github.com/browserutils/kooky`. Store the pair as a JSON blob in the OS keyring
+   (AES-256-GCM encrypted-file fallback, `LINKEDIN_KEYRING_PASSWORD`). Why: Voyager has no public
+   token scheme; the same cookies the web client sends are the only auth.
+6. **CSRF derivation** → `csrf-token = strings.Trim(JSESSIONID, "\"")` (drop the quotes; the Cookie
+   header keeps them). Verified in the dry-run curl output.
+7. **Request headers (every Voyager GET)** → `Cookie: li_at=…; JSESSIONID="ajax:…"`, `csrf-token:
+   ajax:…`, `x-restli-protocol-version: 2.0.0`, `x-li-lang: en_US`,
+   `accept: application/vnd.linkedin.normalized+json+2.1`, and a CURRENT desktop Chrome
+   User-Agent (a single overridable constant `api.DefaultUserAgent`, overridable via
+   `LINKEDIN_USER_AGENT`). Why: a bare Go UA — or a STALE UA — is itself an automated fingerprint.
+8. **Plain net/http, no TLS-fingerprint spoofing** → read Voyager does not require it (the §1
+   standard; adding uTLS is complexity we don't need for reads).
+9. **Env overrides `LI_AT` / `JSESSIONID`** → for headless use; both required together (JSESSIONID
+   is needed to derive csrf). They take precedence over the keyring.
+
+## Rest.li query construction (the #1 correctness trap)
+
+10. **Build the `query=(...)` blob BY HAND with a `safe` set** → structural chars `(`, `)`, `,`,
+    `:` and `List(...)` stay LITERAL; only free-text VALUES (keywords) are percent-encoded
+    (`url.QueryEscape` then `+`→`%20`). Why: `url.Values.Encode()` would percent-encode the
+    structural chars and LinkedIn 400s the request. Verified in the dry-run:
+    `query=(origin:…,keywords:product%20design,selectedFilters:(workplaceType:List(2),timePostedRange:List(r604800)))`.
+11. **Filter mappings** → `--remote`→`workplaceType:List(2)`; `--since`→`timePostedRange:List(r<secs>)`
+    (r86400=24h, r604800=7d, r2592000=30d); `--location <name>`→resolve to geoId→`locationUnion:(geoId:<id>)`;
+    `--job-type`→`jobType:List(F,C,…)`; `--experience`→`experience:List(2,3,…)`.
+
+## SCHEMA DRIFT — the #1 maintenance risk (designed for)
+
+12. **Every drift-prone string is isolated in `internal/voyager/schema.go`** → decorationId version
+    suffixes (`JobSearchCardsCollection-207`, `WebFullJobPosting-65`, `WebCompanyMainRelated-16`),
+    the `$type` match tokens, the Rest.li filter keys, and the accept/x-restli header values. Comment:
+    "THESE STRINGS DRIFT — bump here." Why: LinkedIn rotates decorationId suffixes, swaps
+    `JobSearchCardsCollection`↔`…Lite`, and renames `$type`s (`JobPosting`→`JobPostingCard`) with no
+    notice.
+13. **Match `$type` by CONTAINS/suffix, never exact** (`voyager.typeContains`) → survives the
+    `JobPosting`→`JobPostingCard`→`…Lite` renames.
+14. **A search with a positive total but ZERO recognizable job entities returns `ErrSchemaMoved`**,
+    surfaced with a pointer at `internal/voyager/schema.go` — NOT silently "no results". An honest
+    empty search (total 0, no entities) is fine. Why: silent zero-results would hide a schema
+    rotation for weeks.
+
+## Ban-safety defaults (ON by default, not options)
+
+15. **Jittered human-paced delay between requests** → 3–15s randomized, ONE request in flight, NO
+    parallelism (`internal/api/pacer.go`). The first request of a run is free; the delay applies
+    between successive requests. Why: the biggest risk is not a bug, it is an account restriction
+    from looking automated.
+16. **Per-day job-detail cap ~30**, persisted in the config/state dir (`state.json`), charged by
+    `jobs get` BEFORE the request; refuses (does not fetch) when spent. Overridable with
+    `--daily-cap`. A per-run cap is also supported (default off). Why: bounds daily footprint on the
+    riskiest endpoint (authenticated detail fetches).
+17. **On HTTP 999 (soft-block), 429, or a challenge → back off HARD, surface an actionable message,
+    NEVER retry** → `retry.go` treats 999/429 as terminal (even though 999≥500). A challenge
+    (checkpoint) response tells the user to re-verify in a browser. Only genuine 5xx + transient
+    network errors retry, on GET only. Why: retry-hammering a throttle signal is exactly what flags
+    an account.
+18. **README + SKILL.md carry a prominent ToS/ban-risk disclaimer** (unofficial API, use your own
+    account, low volume, your own machine/residential IP), mirroring how slackctl documents its
+    xoxc/unofficial caveat.
+
+## Architecture
+
+19. **Pattern B (service-layer), not generic-core** → the endpoints are read-only and non-CRUD
+    (GET job-cards search with a Rest.li query DSL, GET-by-id detail, GET company by universalName,
+    GET geo typeahead), the documented §11 trigger for Pattern B. Typed service methods
+    (`SearchJobs`, `SearchJobsAll`, `GetJob`, `GetCompany`, `ResolveGeo`) render raw JSON through
+    the shared formatter.
+20. **`internal/browserauth` is a self-contained, reusable primitive** → `Extractor{Domain,
+    Browsers, RequiredCookieNames}` with `Extract(ctx) (map, source, error)` behind a `Finder`
+    seam (kooky in prod, a fake in tests). A future cookie-CLI imports it and changes only
+    Domain/RequiredCookieNames.
+21. **`api` escape hatch is GET-ONLY** → this is a read-only client; the raw `linkedin api <PATH>`
+    only issues GETs, so the agent guard classifies it as a read (no METHOD gating) and allows it.
+22. **Two hosts, one client** → the Voyager base (authenticated) and the web base (unauthenticated
+    typeahead); `NewClientWithBaseURL` points both at one URL for tests.
+
+## Conditional patterns (§3d) — decisions
+
+- Event-store / offline-cache: **N/A** — LinkedIn is a stateless read API; no ephemeral stream, no
+  need for a local system-of-record. (A tiny name→geoId cache exists purely to cut requests.)
+- Spec-contract test / smoke.yml / spec-sync.yml: **N/A** — no machine spec exists at a stable URL,
+  and a live smoke test against LinkedIn is exactly what ban-safety forbids. Drift is caught by the
+  isolated schema.go + `ErrSchemaMoved`.
+- Multi-group credentials: **N/A** — one cookie pair.
+- Adopt a typed library: **N/A** — no mature Go Voyager client.
+- Terminal-escape sanitization: **applied** (shared renderer) — job titles/company names are free text.
+- CSV: **kept** — job search results are tabular; a job/company detail is not, so it renders best as
+  json/yaml.
+- Binary self-update + keyring encrypted-file fallback: **applied** (fleet standard).
+
+## Completeness
+
+- `api_method_total = 4` is the full enumerated read-only job-search surface (see
+  `enumerated_endpoints`). The manifest covers all 4 (jobs search/get, company get, geo), so
+  `make spec-completeness` reports 100%. No coverage-waiver needed. Write endpoints (apply/save/
+  message) are deliberately OUT OF SCOPE — this is a read-only, ban-safety-first job-search tool.

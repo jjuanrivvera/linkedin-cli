@@ -1,0 +1,41 @@
+{
+  "api": "LinkedIn Voyager (unofficial internal API)",
+  "binary": "linkedin",
+  "base_url": "https://www.linkedin.com/voyager/api",
+  "web_base_url": "https://www.linkedin.com",
+  "docs_url": "https://www.linkedin.com",
+  "profile_flag": "profile",
+  "profile_noun": "profile",
+  "api_method_total": 4,
+  "api_method_source": "LinkedIn publishes NO official OpenAPI/llms.txt/Postman collection for Voyager (it is an internal, unofficial API). The complete READ-ONLY job-search surface this CLI targets was enumerated from the cliwright build brief plus community reverse-engineering of the linkedin.com web client (2026-07): the voyagerJobsDashJobCards search endpoint, the jobs/jobPostings/{id} detail endpoint, the organization/companies universalName lookup, and the jobs-guest geo typeahead. NO live LinkedIn request was made during the build. See DECISIONS.md.",
+  "enumerated_endpoints": [
+    "GET https://www.linkedin.com/voyager/api/voyagerJobsDashJobCards?q=jobSearch",
+    "GET https://www.linkedin.com/voyager/api/jobs/jobPostings/{id}",
+    "GET https://www.linkedin.com/voyager/api/organization/companies?q=universalName",
+    "GET https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO"
+  ],
+  "methods": ["geo"],
+  "resources": [
+    {
+      "name": "jobs",
+      "endpoints": ["GET /voyagerJobsDashJobCards", "GET /jobs/jobPostings/{id}"],
+      "verbs": ["search", "get"],
+      "read_only": true,
+      "fields": ["id", "title", "company", "location", "urn", "workRemoteAllowed", "workplaceTypes", "listedAt", "applyMethod", "companyApplyUrl", "description", "companyUrn"]
+    },
+    {
+      "name": "company",
+      "endpoints": ["GET /organization/companies?q=universalName"],
+      "verbs": ["get"],
+      "read_only": true,
+      "fields": ["name", "universalName", "staffCount", "entityUrn", "description"]
+    },
+    {
+      "name": "geo",
+      "endpoints": ["GET /jobs-guest/api/typeaheadHits?typeaheadType=GEO"],
+      "verbs": [],
+      "read_only": true,
+      "fields": ["id", "displayName"]
+    }
+  ]
+}
