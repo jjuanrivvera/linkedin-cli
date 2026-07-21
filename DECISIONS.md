@@ -53,7 +53,9 @@ during this build; everything is exercised against `httptest` fakes.**
 ## SCHEMA DRIFT — the #1 maintenance risk (designed for)
 
 12. **Every drift-prone string is isolated in `internal/voyager/schema.go`** → decorationId version
-    suffixes (`JobSearchCardsCollection-207`, `WebFullJobPosting-65`, `WebCompanyMainRelated-16`),
+    suffixes (`JobSearchCardsCollection-207`, `WebFullJobPosting-65`, `WebFullCompanyMain-12` — the
+    brief's `WebCompanyMainRelated-16` 400ed in the 2026-07-21 live smoke; `WebFullCompanyMain-12`
+    is what community clients ship and it works),
     the `$type` match tokens, the Rest.li filter keys, and the accept/x-restli header values. Comment:
     "THESE STRINGS DRIFT — bump here." Why: LinkedIn rotates decorationId suffixes, swaps
     `JobSearchCardsCollection`↔`…Lite`, and renames `$type`s (`JobPosting`→`JobPostingCard`) with no
@@ -64,6 +66,12 @@ during this build; everything is exercised against `httptest` fakes.**
     surfaced with a pointer at `internal/voyager/schema.go` — NOT silently "no results". An honest
     empty search (total 0, no entities) is fine. Why: silent zero-results would hide a schema
     rotation for weeks.
+14b. **Search cards dedupe by job id, preferring the hydrated variant** → LinkedIn ships the same
+    job as a titled `(id,JOBS_SEARCH)` card AND a thin `(id,JOB_DETAILS)` prefetch stub (observed
+    live 2026-07-21: 3 of 5 results came back as bare stubs). `ParseSearch` harvests the best card
+    per id from the pool, swaps a stub for its titled twin, reads `title` as well as
+    `jobPostingTitle`, and follows `*jobPosting`/`jobPostingUrn` into `included[]` as a last-resort
+    title source. Why: emitting stubs as results loses title/company/location the response carries.
 
 ## Ban-safety defaults (ON by default, not options)
 

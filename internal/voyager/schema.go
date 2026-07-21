@@ -21,7 +21,9 @@ const (
 	// DecorationJobDetail selects the full job-posting projection for jobs/jobPostings/{id}.
 	DecorationJobDetail = "com.linkedin.voyager.deco.jobs.web.shared.WebFullJobPosting-65"
 	// DecorationCompany selects the organization projection for organization/companies.
-	DecorationCompany = "com.linkedin.voyager.deco.organization.web.WebCompanyMainRelated-16"
+	// WebCompanyMainRelated-16 started 400ing (live smoke 2026-07-21); WebFullCompanyMain-12 is
+	// the projection the community clients ship (transitive-bullshit/linkedin-api, nsandman).
+	DecorationCompany = "com.linkedin.voyager.deco.organization.web.WebFullCompanyMain-12"
 )
 
 // Endpoint paths (relative to the Voyager base https://www.linkedin.com/voyager/api).

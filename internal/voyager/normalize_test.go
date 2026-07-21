@@ -47,6 +47,49 @@ func TestParseSearch_TitleAsBareString(t *testing.T) {
 	assert.Equal(t, "Acme", res.Cards[0].Company)
 }
 
+func TestParseSearch_HydratesPrefetchStubs(t *testing.T) {
+	// Live drift (smoke 2026-07-21): *elements references thin (id,JOB_DETAILS) prefetch stubs
+	// with no text; the titled (id,JOBS_SEARCH) twin sits in the same pool. The stub must come
+	// back hydrated, and the twin pair must yield ONE card, not two.
+	fixture := `{
+	  "data": {"data": {"paging": {"total": 3, "start": 0, "count": 3}, "*elements": [
+	    "urn:li:fsd_jobPostingCard:(5001,JOB_DETAILS)",
+	    "urn:li:fsd_jobPostingCard:(5002,JOB_DETAILS)",
+	    "urn:li:fsd_jobPostingCard:(5002,JOBS_SEARCH)"
+	  ]}},
+	  "included": [
+	    {"$type":"x.JobPostingCard","entityUrn":"urn:li:fsd_jobPostingCard:(5001,JOB_DETAILS)"},
+	    {"$type":"x.JobPostingCard","entityUrn":"urn:li:fsd_jobPostingCard:(5001,JOBS_SEARCH)","jobPostingUrn":"urn:li:fsd_jobPosting:5001","title":{"text":"Platform Engineer"},"primaryDescription":{"text":"Initech"},"secondaryDescription":{"text":"Remote"}},
+	    {"$type":"x.JobPostingCard","entityUrn":"urn:li:fsd_jobPostingCard:(5002,JOB_DETAILS)"},
+	    {"$type":"x.JobPostingCard","entityUrn":"urn:li:fsd_jobPostingCard:(5002,JOBS_SEARCH)","jobPostingUrn":"urn:li:fsd_jobPosting:5002","jobPostingTitle":"SRE","primaryDescription":{"text":"Globex"},"secondaryDescription":{"text":"NYC"}}
+	  ]
+	}`
+	res, err := ParseSearch(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Len(t, res.Cards, 2)
+	assert.Equal(t, "5001", res.Cards[0].ID)
+	assert.Equal(t, "Platform Engineer", res.Cards[0].Title)
+	assert.Equal(t, "Initech", res.Cards[0].Company)
+	assert.Equal(t, "5002", res.Cards[1].ID)
+	assert.Equal(t, "SRE", res.Cards[1].Title)
+}
+
+func TestParseSearch_TitleViaJobPostingRef(t *testing.T) {
+	// A stub with no titled twin still hydrates its title by following *jobPosting into the pool.
+	fixture := `{
+	  "data": {"data": {"paging": {"total": 1}, "*elements": ["urn:li:fsd_jobPostingCard:(7,JOB_DETAILS)"]}},
+	  "included": [
+	    {"$type":"x.JobPostingCard","entityUrn":"urn:li:fsd_jobPostingCard:(7,JOB_DETAILS)","*jobPosting":"urn:li:fsd_jobPosting:7"},
+	    {"$type":"x.JobPosting","entityUrn":"urn:li:fsd_jobPosting:7","title":"Go Developer"}
+	  ]
+	}`
+	res, err := ParseSearch(json.RawMessage(fixture))
+	require.NoError(t, err)
+	require.Len(t, res.Cards, 1)
+	assert.Equal(t, "7", res.Cards[0].ID)
+	assert.Equal(t, "Go Developer", res.Cards[0].Title)
+}
+
 func TestParseSearch_EmptyIsNotSchemaMoved(t *testing.T) {
 	fixture := `{"data":{"data":{"paging":{"total":0},"*elements":[]}},"included":[]}`
 	res, err := ParseSearch(json.RawMessage(fixture))

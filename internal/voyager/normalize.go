@@ -70,13 +70,31 @@ func ParseSearch(raw json.RawMessage) (*SearchResult, error) {
 	collection := unwrapData(env.Data)
 	res.Total, res.Start, res.Count = readPaging(collection)
 
+	// LinkedIn ships the same job as multiple card variants — a hydrated (id,JOBS_SEARCH) card
+	// next to a thin (id,JOB_DETAILS) prefetch stub with no text. Harvest the best variant per
+	// job id up front, then emit each referenced card once, swapping a stub for its hydrated twin.
+	best := bestCardsByID(env.Included, index)
+	seen := make(map[string]bool)
+	appendCard := func(card JobCard) {
+		if card.ID != "" {
+			if hydrated, ok := best[card.ID]; ok && card.Title == "" {
+				card = hydrated
+			}
+			if seen[card.ID] {
+				return
+			}
+			seen[card.ID] = true
+		}
+		res.Cards = append(res.Cards, card)
+	}
+
 	for _, urn := range readElements(collection) {
 		ent, ok := index[urn]
 		if !ok {
 			continue
 		}
-		if card, ok := jobCardFrom(ent); ok {
-			res.Cards = append(res.Cards, card)
+		if card, ok := jobCardFrom(ent, index); ok {
+			appendCard(card)
 		}
 	}
 
@@ -85,8 +103,8 @@ func ParseSearch(raw json.RawMessage) (*SearchResult, error) {
 	// change still yields results.
 	if len(res.Cards) == 0 && jobEntities > 0 {
 		for _, ent := range env.Included {
-			if card, ok := jobCardFrom(ent); ok {
-				res.Cards = append(res.Cards, card)
+			if card, ok := jobCardFrom(ent, index); ok {
+				appendCard(card)
 			}
 		}
 	}
@@ -197,14 +215,17 @@ func readElements(collection map[string]json.RawMessage) []string {
 }
 
 // jobCard is the field subset we read off a JobPostingCard entity. LinkedIn puts the title as a
-// bare string on some variants and a {text} object on others, so titleText handles both.
+// bare string on some variants and a {text} object on others, so titleText handles both; the
+// dash variant names it `title` instead of `jobPostingTitle`, so both keys are read.
 type jobCard struct {
 	Type          string    `json:"$type"`
 	JobPostingURN string    `json:"jobPostingUrn"`
 	EntityURN     string    `json:"entityUrn"`
 	Title         textOrStr `json:"jobPostingTitle"`
+	TitleAlt      textOrStr `json:"title"`
 	Primary       textOrStr `json:"primaryDescription"`
 	Secondary     textOrStr `json:"secondaryDescription"`
+	JobPostingRef string    `json:"*jobPosting"`
 }
 
 // textOrStr decodes either a bare "…" string or a {"text":"…"} object into its text.
@@ -230,7 +251,9 @@ func (t *textOrStr) UnmarshalJSON(b []byte) error {
 }
 
 // jobCardFrom extracts a JobCard from a raw entity if it is a JobPostingCard, else (…,false).
-func jobCardFrom(raw json.RawMessage) (JobCard, bool) {
+// A card that carries no text of its own is hydrated by following its *jobPosting /
+// jobPostingUrn reference into the entity pool.
+func jobCardFrom(raw json.RawMessage, index map[string]json.RawMessage) (JobCard, bool) {
 	var h entityHeader
 	if json.Unmarshal(raw, &h) != nil || !typeContains(h.Type, TypeJobCard) {
 		return JobCard{}, false
@@ -241,14 +264,55 @@ func jobCardFrom(raw json.RawMessage) (JobCard, bool) {
 	if urn == "" {
 		urn = c.EntityURN
 	}
+	title := c.Title.Text
+	if title == "" {
+		title = c.TitleAlt.Text
+	}
+	if title == "" {
+		title = titleFromPosting(index, c.JobPostingRef, c.JobPostingURN)
+	}
 	return JobCard{
 		ID:       lastURNSegment(urn),
-		Title:    c.Title.Text,
+		Title:    title,
 		Company:  c.Primary.Text,
 		Location: c.Secondary.Text,
 		URN:      urn,
 		Raw:      raw,
 	}, true
+}
+
+// bestCardsByID harvests every JobPostingCard in the pool and keeps, per job id, the most
+// hydrated variant, so ParseSearch can swap a JOB_DETAILS prefetch stub for its titled twin.
+func bestCardsByID(included []json.RawMessage, index map[string]json.RawMessage) map[string]JobCard {
+	best := make(map[string]JobCard)
+	for _, ent := range included {
+		card, ok := jobCardFrom(ent, index)
+		if !ok || card.ID == "" {
+			continue
+		}
+		if cur, exists := best[card.ID]; !exists || (cur.Title == "" && card.Title != "") {
+			best[card.ID] = card
+		}
+	}
+	return best
+}
+
+// titleFromPosting resolves a card's posting references against the entity pool and reads the
+// referenced JobPosting's title — the hydration path for cards that only carry URNs.
+func titleFromPosting(index map[string]json.RawMessage, refs ...string) string {
+	for _, ref := range refs {
+		ent, ok := index[ref]
+		if !ok {
+			continue
+		}
+		var p struct {
+			Title textOrStr `json:"title"`
+		}
+		if json.Unmarshal(ent, &p) == nil && p.Title.Text != "" {
+			return p.Title.Text
+		}
+	}
+	return ""
 }
 
 // lastURNSegment returns the id at the tail of an URN: the segment after the final ':'. For
