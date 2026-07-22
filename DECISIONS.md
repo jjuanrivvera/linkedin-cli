@@ -84,6 +84,16 @@ during this build; everything is exercised against `httptest` fakes.**
     from injectable `var` seams (`newOriginToken`/`newTrackingID`), never raw rand in the call path,
     so tests assert a deterministic body. The JSON is marshalled with `SetEscapeHTML(false)` so a
     body containing `<`/`>`/`&` (or the dry-run placeholder) stays readable in the previewed curl.
+30. **The HTTP client carries a cookie jar — load-bearing for `/voyager/api/me`** → live smoke #2
+    (2026-07-22) hit "stopped after 10 redirects" resolving the mailbox URN: `/me` answers the first
+    request with a 302 that `Set-Cookie`s the `lidc` datacenter-routing cookie and redirects back to
+    `/me`. Without a jar the client re-sends the same cookies every hop and loops to net/http's
+    10-redirect cap; with `cookiejar.New` on `http.Client.Jar`, `lidc` is persisted and the second
+    hop returns 200. jobs/search/detail answer 200 directly, which is why only `/me` (and thus
+    `messages list`/`read`, which resolve the mailbox first) looped. Mirrors mautrix/linkedin's
+    cookie persistence. Also updated in this pass: `ListQueryID` bumped to the hash captured live
+    from the browser 2026-07-22 (`…0d5e6781…`; the prior `…f0873b9…` had gone dead) — the
+    `MessagesQueryID` for thread reads is still the best-known mautrix value, pending live capture.
 
 ## Auth — borrow the browser session (cookie auth)
 

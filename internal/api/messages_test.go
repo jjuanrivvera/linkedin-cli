@@ -63,13 +63,44 @@ func TestListConversations(t *testing.T) {
 	res, err := c.ListConversations(t.Context(), 0)
 	require.NoError(t, err)
 	assert.Contains(t, gotPath, "/voyagerMessagingGraphQL/graphql")
-	assert.Equal(t, "messengerConversations.f0873b936b43ed663997b215b2c28359", gotQueryID)
+	assert.Equal(t, "messengerConversations.0d5e6781bbee71c3e51c8843c6519f48", gotQueryID)
 	assert.Contains(t, gotVars, "mailboxUrn:urn:li:fsd_profile:ACoAA1", "mailbox URN from /me, escaped in-blob")
 	assert.Equal(t, "application/graphql", gotAccept, "GraphQL GET uses the graphql accept header")
 	require.Len(t, res.Conversations, 1)
 	assert.Equal(t, "urn:li:msg_conversation:2-AAA==", res.Conversations[0].ID)
 	assert.Equal(t, "hola", res.Conversations[0].Snippet)
 	assert.NotEmpty(t, res.Raw)
+}
+
+// TestGetMailboxURN_SurvivesRedirectHandshake reproduces the live blocker: /voyager/api/me answers
+// the first hit with a 302 that Set-Cookies `lidc` and redirects back to /me. A client with a
+// cookie jar persists lidc and the second hop returns 200; without one it re-sends the same cookies
+// and loops until net/http's 10-redirect cap. This asserts the jar breaks the loop.
+func TestGetMailboxURN_SurvivesRedirectHandshake(t *testing.T) {
+	var meHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/me") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		meHits++
+		if _, err := r.Cookie("lidc"); err != nil { // no routing cookie yet → bounce once, setting it
+			http.SetCookie(w, &http.Cookie{Name: "lidc", Value: "b=routed", Path: "/"})
+			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte(meBody))
+	}))
+	t.Cleanup(srv.Close)
+
+	hc := srv.Client()
+	hc.Jar = newCookieJar() // production wires this in New(); srv.Client() does not
+	c := NewClientWithBaseURL(srv.URL, WithHTTPClient(hc), WithMaxRetries(0), WithCookies(testCookies))
+
+	urn, err := c.GetMailboxURN(t.Context())
+	require.NoError(t, err, "the cookie jar must let the /me redirect handshake complete")
+	assert.Equal(t, "urn:li:fsd_profile:ACoAA1", urn)
+	assert.Equal(t, 2, meHits, "one 302 bounce, then a 200 — not a 10-redirect loop")
 }
 
 func TestGetConversationEvents(t *testing.T) {

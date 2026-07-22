@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"strings"
@@ -109,7 +110,7 @@ func New(voyagerBase, webBase string, opts ...Option) *Client {
 	c := &Client{
 		voyagerBase: strings.TrimRight(voyagerBase, "/"),
 		webBase:     strings.TrimRight(webBase, "/"),
-		httpc:       &http.Client{Timeout: 30 * time.Second},
+		httpc:       &http.Client{Timeout: 30 * time.Second, Jar: newCookieJar()},
 		userAgent:   DefaultUserAgent,
 		DryRunOut:   os.Stdout,
 		VerboseOut:  os.Stderr,
@@ -125,6 +126,20 @@ func New(voyagerBase, webBase string, opts ...Option) *Client {
 // one httptest server (routing by path); it also backs a single-host --base-url override.
 func NewClientWithBaseURL(base string, opts ...Option) *Client {
 	return New(base, base, opts...)
+}
+
+// newCookieJar returns a cookie jar for the HTTP client. It is load-bearing for /voyager/api/me:
+// LinkedIn answers /me with a 302 that Set-Cookies the `lidc` datacenter-routing cookie and
+// redirects back to /me. Without a jar the client re-sends the same cookies on every hop and loops
+// until net/http's 10-redirect cap ("stopped after 10 redirects"); with a jar the `lidc` cookie is
+// persisted and the second hop returns 200. Endpoints that answer 200 directly (jobs search) never
+// needed it, which is why only /me looped. Mirrors how mautrix/linkedin persists cookies.
+func newCookieJar() http.CookieJar {
+	jar, err := cookiejar.New(nil)
+	if err != nil { // cookiejar.New(nil) never returns an error, but never panic in a constructor
+		return nil
+	}
+	return jar
 }
 
 // VoyagerBaseURL returns the resolved Voyager host.

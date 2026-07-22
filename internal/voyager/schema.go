@@ -63,7 +63,8 @@ const (
 	PathMessengerDashSend = "/voyagerMessagingDashMessengerMessages"
 
 	// ListQueryID selects the conversations-list GraphQL query. ROTATES on LinkedIn's build.
-	ListQueryID = "messengerConversations.f0873b936b43ed663997b215b2c28359"
+	// Captured live from Juan's browser 2026-07-22 (the prior …f0873b9… hash had gone dead).
+	ListQueryID = "messengerConversations.0d5e6781bbee71c3e51c8843c6519f48"
 	// MessagesQueryID selects the thread-read GraphQL query. ROTATES on LinkedIn's build.
 	MessagesQueryID = "messengerMessages.4088d03bc70c91c3fa68965cb42336de"
 
