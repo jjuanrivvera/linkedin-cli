@@ -10,21 +10,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClassifyTree_AllReads(t *testing.T) {
-	// This is a read-only CLI: every API command (jobs/company/geo/api) classifies as read;
-	// no writes or destructive.
+func TestClassifyTree_ReadFirst(t *testing.T) {
+	// Read-first CLI: every API command (jobs/company/geo/messages list|read/api) classifies
+	// as read; the ONE write, `messages send`, classifies as DESTRUCTIVE (irreversible + the
+	// classic account-restriction trigger) so every guard hard-blocks it.
 	cls := classifyAPICommands(false)
 	assert.NotEmpty(t, cls.Read)
 	assert.Empty(t, cls.Write)
-	assert.Empty(t, cls.Destructive)
 
 	paths := map[string]bool{}
 	for _, c := range cls.Read {
 		paths[c.Path] = true
 	}
-	for _, want := range []string{"jobs search", "jobs get", "company get", "geo", "api"} {
+	for _, want := range []string{"jobs search", "jobs get", "company get", "geo", "api",
+		"messages list", "messages read"} {
 		assert.True(t, paths[want], want)
 	}
+
+	require.Len(t, cls.Destructive, 1)
+	assert.Equal(t, "messages send", cls.Destructive[0].Path)
+	assert.Contains(t, cls.Destructive[0].AllPaths(), "message send", "cobra alias path is guarded too")
+}
+
+// TestMessagesSend_GuardFailClosed pins that `messages send` can never fall through as
+// harmless: its own annotation classifies it destructive, and even with the annotation
+// stripped the fail-closed default classifies an unannotated leaf destructive.
+func TestMessagesSend_GuardFailClosed(t *testing.T) {
+	root := NewRootCmd()
+	send, _, err := root.Find([]string{"messages", "send"})
+	require.NoError(t, err)
+	assert.Equal(t, kindDestructive, kindOf(send), "annotated destructive")
+	send.Annotations = nil
+	assert.Equal(t, kindDestructive, kindOf(send), "unannotated ⇒ destructive (fail-closed)")
 }
 
 func TestEveryAPICommandIsAnnotated(t *testing.T) {
@@ -59,9 +76,13 @@ func TestGuard_ClaudeCode(t *testing.T) {
 	out, _, err := e.run("agent", "guard", "--host", "claude-code")
 	require.NoError(t, err)
 	assert.Contains(t, out, "linkedin-guard.sh")
-	// alias set is denied; reads are allowed.
+	// messages send (incl. its MCP tool + alias path) and alias set are denied; reads allowed.
+	assert.Contains(t, out, "Bash(linkedin messages send:*)")
+	assert.Contains(t, out, "Bash(linkedin message send:*)")
+	assert.Contains(t, out, "mcp__linkedin__linkedin_messages_send")
 	assert.Contains(t, out, "Bash(linkedin alias set:*)")
 	assert.Contains(t, out, "Bash(linkedin jobs search:*)")
+	assert.Contains(t, out, "Bash(linkedin messages list:*)")
 }
 
 func TestGuard_Codex(t *testing.T) {
@@ -69,7 +90,8 @@ func TestGuard_Codex(t *testing.T) {
 	out, _, err := e.run("agent", "guard", "--host", "codex")
 	require.NoError(t, err)
 	assert.Contains(t, out, "sandbox_mode = \"read-only\"")
-	assert.Contains(t, out, "no irreversible operations")
+	assert.Contains(t, out, "Never auto-approve these irreversible linkedin operations")
+	assert.Contains(t, out, "linkedin messages send")
 }
 
 func TestGuard_OpenCode(t *testing.T) {
@@ -80,7 +102,10 @@ func TestGuard_OpenCode(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &cfg))
 	perm := cfg["permission"].(map[string]any)["bash"].(map[string]any)
 	assert.Equal(t, "deny", perm["linkedin alias set*"])
+	assert.Equal(t, "deny", perm["linkedin messages send*"])
+	assert.Equal(t, "deny", perm["linkedin message send*"], "alias path denied too")
 	assert.Equal(t, "allow", perm["linkedin jobs search*"])
+	assert.Equal(t, "allow", perm["linkedin messages list*"])
 }
 
 func TestGuard_UnknownHost(t *testing.T) {
