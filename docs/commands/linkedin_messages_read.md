@@ -1,15 +1,33 @@
-## linkedin agent
+## linkedin messages read
 
-AI-agent integration helpers
+Print one conversation's message thread (oldest first)
 
 ### Synopsis
 
-Generate safety configuration for AI agents that drive linkedin.
+Print the message thread of one conversation — sender, time, and text — oldest→newest.
+The conversation id comes from `linkedin messages list`. Full event entities are available
+under -o json.
+
+⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).
+
+```
+linkedin messages read <conversationId> [flags]
+```
+
+### Examples
+
+```
+  linkedin messages read urn:li:msg_conversation:2-YWJjZGVm==
+  linkedin messages read urn:li:msg_conversation:2-YWJjZGVm== -o json --jq '.[].text'
+```
 
 ### Options
 
 ```
-  -h, --help   help for agent
+  -h, --help   help for read
 ```
 
 ### Options inherited from parent commands
@@ -35,6 +53,5 @@ Generate safety configuration for AI agents that drive linkedin.
 
 ### SEE ALSO
 
-* [linkedin](linkedin.md)	 - An agent-friendly CLI for LinkedIn job search and messaging (unofficial Voyager API)
-* [linkedin agent guard](linkedin_agent_guard.md)	 - Generate agent-safety config that blocks destructive linkedin operations
+* [linkedin messages](linkedin_messages.md)	 - Read and send LinkedIn messages (⚠ elevated ban risk)
 

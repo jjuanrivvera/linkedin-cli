@@ -37,6 +37,68 @@ const (
 // https://www.linkedin.com).
 const TypeaheadPath = "/jobs-guest/api/typeaheadHits"
 
+// ┌─────────────────────────────────────────────────────────────────────────────────────┐
+// │  MESSENGER GRAPHQL — queryId hashes rotate on LinkedIn's frontend build.               │
+// │  When `messages list`/`read` starts 500ing or returning empties, REFRESH these two     │
+// │  queryId hashes (and, if the URLs moved, the paths) from a maintained client            │
+// │  (mautrix/linkedin pkg/linkedingo/constants.go) or the browser Network tab. They drift  │
+// │  HARDER and more often than the decorationIds above — this is the #1 messaging break.   │
+// └─────────────────────────────────────────────────────────────────────────────────────┘
+//
+// The web app abandoned the legacy /messaging/conversations + /events inbox (it now 500s,
+// live smoke 2026-07-22) for a GraphQL "messenger" surface. list/read are GraphQL GETs that
+// require the caller's mailbox URN (resolved from /me — see PathMe); send is a Dash POST.
+// DECISIONS.md #27–#29.
+const (
+	// PathMe resolves the caller's own profile (for the mailbox URN the GraphQL calls need).
+	// GET /me → {"miniProfile":{"entityUrn":"urn:li:fs_miniProfile:<ID>","dashEntityUrn":"urn:li:fsd_profile:<ID>"}}.
+	PathMe = "/me"
+
+	// PathMessengerGraphQL is the GraphQL GET surface for conversations + thread reads.
+	// Called with ?queryId=<hash>&variables=(...) and the accept: application/graphql header.
+	PathMessengerGraphQL = "/voyagerMessagingGraphQL/graphql"
+
+	// PathMessengerDashSend is the Dash send endpoint (POST ?action=createMessage,
+	// Content-Type text/plain; charset=UTF-8).
+	PathMessengerDashSend = "/voyagerMessagingDashMessengerMessages"
+
+	// ListQueryID selects the conversations-list GraphQL query. ROTATES on LinkedIn's build.
+	// Captured live from Juan's browser 2026-07-22 (the prior …f0873b9… hash had gone dead).
+	ListQueryID = "messengerConversations.0d5e6781bbee71c3e51c8843c6519f48"
+	// MessagesQueryID selects the thread-read GraphQL query. ROTATES on LinkedIn's build.
+	MessagesQueryID = "messengerMessages.4088d03bc70c91c3fa68965cb42336de"
+
+	// AcceptGraphQL is the accept header the GraphQL messenger GETs require (NOT the
+	// normalized+json accept the rest of the client sends).
+	AcceptGraphQL = "application/graphql"
+
+	// ActionCreateMessage is the ?action= token on the Dash send POST.
+	ActionCreateMessage = "createMessage"
+	// SendContentType is the Content-Type the web client sends on the createMessage POST —
+	// plain text, not JSON (that is genuinely what LinkedIn expects).
+	SendContentType = "text/plain; charset=UTF-8"
+
+	// GraphQL variables=(...) key names for the messenger queries.
+	VarMailboxURN      = "mailboxUrn"
+	VarConversationURN = "conversationUrn"
+	VarCountBefore     = "countBefore"
+	VarCountAfter      = "countAfter"
+	VarDeliveredAt     = "deliveredAt"
+
+	// Response-envelope container keys — the GraphQL result field wrapping each elements[]
+	// list. These drift with the queryId, so they live here too.
+	KeyConversationsResult = "messengerConversationsBySyncToken"
+	KeyMessagesResult      = "messengerMessagesByAnchorTimestamp"
+
+	// ConversationURNPrefix is the msg_conversation URN namespace the read/send calls accept
+	// (list emits full URNs; a bare id is prefixed defensively).
+	ConversationURNPrefix = "urn:li:msg_conversation:"
+	// MiniProfileURNPrefix / ProfileURNPrefix bridge the /me miniProfile.entityUrn to the
+	// fsd_profile mailbox URN when dashEntityUrn is absent.
+	MiniProfileURNPrefix = "urn:li:fs_miniProfile:"
+	ProfileURNPrefix     = "urn:li:fsd_profile:"
+)
+
 // Rest.li query keys for the job-search `query=(...)` blob. These are structural names LinkedIn
 // uses inside the parenthesised query; they drift less often than decorationIds but still live
 // here so a rename is one place.

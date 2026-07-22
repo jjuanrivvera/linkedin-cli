@@ -6,13 +6,16 @@
   "docs_url": "https://www.linkedin.com",
   "profile_flag": "profile",
   "profile_noun": "profile",
-  "api_method_total": 4,
-  "api_method_source": "LinkedIn publishes NO official OpenAPI/llms.txt/Postman collection for Voyager (it is an internal, unofficial API). The complete READ-ONLY job-search surface this CLI targets was enumerated from the cliwright build brief plus community reverse-engineering of the linkedin.com web client (2026-07): the voyagerJobsDashJobCards search endpoint, the jobs/jobPostings/{id} detail endpoint, the organization/companies universalName lookup, and the jobs-guest geo typeahead. NO live LinkedIn request was made during the build. See DECISIONS.md.",
+  "api_method_total": 7,
+  "api_method_source": "LinkedIn publishes NO official OpenAPI/llms.txt/Postman collection for Voyager (it is an internal, unofficial API). The surface this CLI targets was enumerated from the cliwright build brief plus community reverse-engineering of the linkedin.com web client (2026-07). Job-search surface: the voyagerJobsDashJobCards search endpoint, the jobs/jobPostings/{id} detail endpoint, the organization/companies universalName lookup, and the jobs-guest geo typeahead. Messaging surface: the CURRENT GraphQL 'messenger' endpoints the web app now uses — voyagerMessagingGraphQL/graphql for conversations list + thread read (queryId hashes that ROTATE on LinkedIn's frontend build) and voyagerMessagingDashMessengerMessages?action=createMessage for send. The legacy keyVersion=LEGACY_INBOX conversations/events endpoints are DEAD (HTTP 500 live 2026-07-22) and were replaced; queryIds/URLs pinned from the maintained mautrix/linkedin bridge (pkg/linkedingo). The GraphQL calls depend on an internal GET /me to resolve the caller's fsd_profile mailbox URN (a dependency, not a user-facing method). NO live LinkedIn request was made during the build. See DECISIONS.md #27-#29.",
   "enumerated_endpoints": [
     "GET https://www.linkedin.com/voyager/api/voyagerJobsDashJobCards?q=jobSearch",
     "GET https://www.linkedin.com/voyager/api/jobs/jobPostings/{id}",
     "GET https://www.linkedin.com/voyager/api/organization/companies?q=universalName",
-    "GET https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO"
+    "GET https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO",
+    "GET https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.<hash>&variables=(mailboxUrn:...)",
+    "GET https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMessages.<hash>&variables=(conversationUrn:...)",
+    "POST https://www.linkedin.com/voyager/api/voyagerMessagingDashMessengerMessages?action=createMessage"
   ],
   "methods": ["geo"],
   "resources": [
@@ -36,6 +39,17 @@
       "verbs": [],
       "read_only": true,
       "fields": ["id", "displayName"]
+    },
+    {
+      "name": "messages",
+      "endpoints": [
+        "GET /voyagerMessagingGraphQL/graphql?queryId=messengerConversations.<hash>",
+        "GET /voyagerMessagingGraphQL/graphql?queryId=messengerMessages.<hash>",
+        "POST /voyagerMessagingDashMessengerMessages?action=createMessage"
+      ],
+      "verbs": ["list", "read", "send"],
+      "read_only": false,
+      "fields": ["id", "participants", "lastActivityAt", "snippet", "sender", "createdAt", "text", "urn"]
     }
   ]
 }
