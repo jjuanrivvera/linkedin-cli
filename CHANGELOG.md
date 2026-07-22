@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-22
+
 ### Added
 - Initial read-only CLI for LinkedIn job search via the unofficial Voyager API.
 - `jobs search` — keywords, `--location` (geoId-resolved), `--remote`, `--since`, `--job-type`,
@@ -33,4 +35,5 @@ All notable changes to this project are documented here. The format follows
   send, then the job-search curl with a `geoId:<GEO_ID>` placeholder) — no authentication or live
   geo resolution required.
 
-[Unreleased]: https://github.com/jjuanrivvera/linkedin-cli/commits/develop
+[Unreleased]: https://github.com/jjuanrivvera/linkedin-cli/compare/v0.1.0...develop
+[0.1.0]: https://github.com/jjuanrivvera/linkedin-cli/releases/tag/v0.1.0
