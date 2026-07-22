@@ -7,6 +7,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -171,7 +172,7 @@ func (c *Client) get(ctx context.Context, fullURL string, authed bool) (json.Raw
 	}
 
 	if c.DryRun {
-		c.printCurl(fullURL, headers, liAt, jsession)
+		c.printCurl(http.MethodGet, fullURL, headers, liAt, jsession, nil)
 		return nil, nil
 	}
 
@@ -221,6 +222,79 @@ func (c *Client) get(ctx context.Context, fullURL string, authed bool) (json.Raw
 	return body, nil
 }
 
+// postVoyager POSTs a JSON body to a Voyager path (relative to the voyager base) with an
+// already-assembled raw query string. It mirrors get()'s header/cookie/csrf handling
+// (Cookie keeps JSESSIONID's quotes; csrf-token strips them), paces via the ban-safety
+// Pacer, and supports dry-run. sendWithRetry gives a POST a ZERO retry budget (retry.go is
+// idempotent-only) — a failed send surfaces immediately, it is never re-fired.
+func (c *Client) postVoyager(ctx context.Context, path, rawQuery string, body []byte) (json.RawMessage, error) {
+	u := c.voyagerBase + "/" + strings.TrimLeft(path, "/")
+	if rawQuery != "" {
+		u += "?" + rawQuery
+	}
+	headers := map[string]string{
+		"User-Agent":                c.userAgent,
+		"Accept":                    voyager.AcceptNormalized,
+		"Content-Type":              "application/json",
+		"x-restli-protocol-version": voyager.RestliProtoVersion,
+		"x-li-lang":                 voyager.LiLang,
+	}
+	liAt, jsession := "", ""
+	if c.cookies != nil {
+		a, j, err := c.cookies(ctx)
+		if err != nil {
+			return nil, err
+		}
+		liAt, jsession = a, j
+	}
+
+	if c.DryRun {
+		c.printCurl(http.MethodPost, u, headers, liAt, jsession, body)
+		return nil, nil
+	}
+
+	if c.pacer != nil {
+		if err := c.pacer.Wait(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	send := func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		if liAt != "" {
+			req.Header.Set("Cookie", fmt.Sprintf("li_at=%s; JSESSIONID=%s", liAt, jsession))
+			req.Header.Set("csrf-token", strings.Trim(jsession, `"`))
+		}
+		if c.Verbose {
+			fmt.Fprintf(c.VerboseOut, "> POST %s\n", u)
+		}
+		return c.httpc.Do(req)
+	}
+
+	resp, err := c.sendWithRetry(ctx, http.MethodPost, send)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if c.Verbose {
+		fmt.Fprintf(c.VerboseOut, "< HTTP %d (%d bytes)\n", resp.StatusCode, len(respBody))
+	}
+	if resp.StatusCode >= 400 || resp.StatusCode == StatusSoftBlock {
+		return nil, parseAPIError(resp.StatusCode, respBody, resp.Header)
+	}
+	return respBody, nil
+}
+
 // Do sends one raw authenticated Voyager request and returns status, headers, and body — the
 // escape hatch behind `linkedin api`. Only GET is ever sent for read Voyager; method is validated
 // by the caller. A dry-run returns status 0.
@@ -244,10 +318,14 @@ func (c *Client) Do(ctx context.Context, path string, q url.Values) (int, json.R
 }
 
 // printCurl emits a copy-pasteable curl equivalent, redacting the session cookies unless
-// --show-token.
-func (c *Client) printCurl(fullURL string, headers map[string]string, liAt, jsession string) {
+// --show-token. A non-GET adds -X and the JSON body via --data.
+func (c *Client) printCurl(method, fullURL string, headers map[string]string, liAt, jsession string, body []byte) {
 	var b strings.Builder
-	b.WriteString("curl " + shellQuote(fullURL))
+	b.WriteString("curl ")
+	if method != http.MethodGet {
+		b.WriteString("-X " + method + " ")
+	}
+	b.WriteString(shellQuote(fullURL))
 	for _, k := range sortedKeys(headers) {
 		b.WriteString(" \\\n  -H " + shellQuote(k+": "+headers[k]))
 	}
@@ -262,6 +340,9 @@ func (c *Client) printCurl(fullURL string, headers map[string]string, liAt, jses
 			csrf = strings.Trim(jsession, `"`)
 		}
 		b.WriteString(" \\\n  -H " + shellQuote("csrf-token: "+csrf))
+	}
+	if len(body) > 0 {
+		b.WriteString(" \\\n  --data " + shellQuote(string(body)))
 	}
 	fmt.Fprintln(c.DryRunOut, b.String())
 }

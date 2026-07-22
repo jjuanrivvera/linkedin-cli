@@ -37,6 +37,27 @@ const (
 // https://www.linkedin.com).
 const TypeaheadPath = "/jobs-guest/api/typeaheadHits"
 
+// Messaging — the community-proven LEGACY Voyager inbox surface (the same
+// conversations/events endpoints the tomquirk/linkedin-api Python library has driven for
+// years), deliberately NOT the newer voyagerMessagingDash GraphQL surface (DECISIONS.md
+// #23). Everything here drifts on LinkedIn's schedule: the paths, the keyVersion value,
+// the create-action token, and the MessageCreate body type key.
+const (
+	// PathConversations lists the inbox; append "/{conversationId}/events" for one
+	// thread (GET) or to send into it (POST ?action=create).
+	PathConversations = "/messaging/conversations"
+	// KeyVersionParam / KeyVersionLegacyInbox select the legacy inbox projection on the
+	// conversations list.
+	KeyVersionParam       = "keyVersion"
+	KeyVersionLegacyInbox = "LEGACY_INBOX"
+	// ActionParam / ActionCreate form the ?action=create query on the send POST.
+	ActionParam  = "action"
+	ActionCreate = "create"
+	// KeyMessageCreate is the fully-qualified type key wrapping the send POST body:
+	// {"eventCreate":{"value":{<KeyMessageCreate>:{"attributedBody":{…},"attachments":[]}}}}.
+	KeyMessageCreate = "com.linkedin.voyager.messaging.create.MessageCreate"
+)
+
 // Rest.li query keys for the job-search `query=(...)` blob. These are structural names LinkedIn
 // uses inside the parenthesised query; they drift less often than decorationIds but still live
 // here so a rename is one place.
@@ -80,4 +101,17 @@ const (
 	TypeJobPosting = "JobPosting"
 	// TypeCompany identifies an organization/company entity.
 	TypeCompany = "Company"
+
+	// TypeConversation identifies a legacy-inbox conversation entity
+	// (com.linkedin.voyager.messaging.Conversation).
+	TypeConversation = "Conversation"
+	// TypeMessagingMember identifies a conversation participant entity; its miniProfile
+	// (inline or a *miniProfile reference) carries firstName/lastName.
+	TypeMessagingMember = "MessagingMember"
+	// TypeMessagingEvent identifies a message-thread event entity. The token keeps the
+	// "messaging." prefix so it never collides with the job-search entity types.
+	TypeMessagingEvent = "messaging.Event"
+	// TypeMessageEventContent matches the eventContent key that wraps a text message
+	// (com.linkedin.voyager.messaging.event.MessageEvent).
+	TypeMessageEventContent = "MessageEvent"
 )
