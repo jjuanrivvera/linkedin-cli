@@ -1,4 +1,21 @@
-# linkedin — a read-only CLI for LinkedIn job search
+<div align="center">
+
+# linkedin
+
+[![CI](https://github.com/jjuanrivvera/linkedin-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/jjuanrivvera/linkedin-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/jjuanrivvera/linkedin-cli)](https://github.com/jjuanrivvera/linkedin-cli/releases/latest)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen)](https://github.com/jjuanrivvera/linkedin-cli/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/jjuanrivvera/linkedin-cli.svg)](https://pkg.go.dev/github.com/jjuanrivvera/linkedin-cli)
+[![Go version](https://img.shields.io/github/go-mod/go-version/jjuanrivvera/linkedin-cli)](go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jjuanrivvera/linkedin-cli)
+[![Built with cliwright](https://img.shields.io/badge/built_with-cliwright-1f6feb)](https://cliwright.jjuanrivvera.com)
+
+**Read-only LinkedIn job search from your terminal — jobs, companies, geo lookup over the unofficial Voyager API, agent-friendly output (JSON/YAML/CSV/MCP).**
+
+[Documentation](https://jjuanrivvera.github.io/linkedin-cli/) · [Command reference](https://jjuanrivvera.github.io/linkedin-cli/commands/linkedin/)
+
+</div>
 
 `linkedin` is a fast, scriptable, **read-only** command-line client for LinkedIn's internal
 **Voyager** API: search jobs, fetch a job's full detail, look up a company, and resolve a location
