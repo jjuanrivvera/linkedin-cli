@@ -6,13 +6,16 @@
   "docs_url": "https://www.linkedin.com",
   "profile_flag": "profile",
   "profile_noun": "profile",
-  "api_method_total": 4,
-  "api_method_source": "LinkedIn publishes NO official OpenAPI/llms.txt/Postman collection for Voyager (it is an internal, unofficial API). The complete READ-ONLY job-search surface this CLI targets was enumerated from the cliwright build brief plus community reverse-engineering of the linkedin.com web client (2026-07): the voyagerJobsDashJobCards search endpoint, the jobs/jobPostings/{id} detail endpoint, the organization/companies universalName lookup, and the jobs-guest geo typeahead. NO live LinkedIn request was made during the build. See DECISIONS.md.",
+  "api_method_total": 7,
+  "api_method_source": "LinkedIn publishes NO official OpenAPI/llms.txt/Postman collection for Voyager (it is an internal, unofficial API). The surface this CLI targets was enumerated from the cliwright build brief plus community reverse-engineering of the linkedin.com web client (2026-07). Job-search surface: the voyagerJobsDashJobCards search endpoint, the jobs/jobPostings/{id} detail endpoint, the organization/companies universalName lookup, and the jobs-guest geo typeahead. Messaging surface: the community-proven LEGACY Voyager messaging endpoints (keyVersion=LEGACY_INBOX) — the same conversations/events/send endpoints the tomquirk/linkedin-api Python library has driven for years, deliberately NOT the newer voyagerMessagingDash GraphQL surface. NO live LinkedIn request was made during the build. See DECISIONS.md.",
   "enumerated_endpoints": [
     "GET https://www.linkedin.com/voyager/api/voyagerJobsDashJobCards?q=jobSearch",
     "GET https://www.linkedin.com/voyager/api/jobs/jobPostings/{id}",
     "GET https://www.linkedin.com/voyager/api/organization/companies?q=universalName",
-    "GET https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO"
+    "GET https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO",
+    "GET https://www.linkedin.com/voyager/api/messaging/conversations?keyVersion=LEGACY_INBOX",
+    "GET https://www.linkedin.com/voyager/api/messaging/conversations/{conversationId}/events",
+    "POST https://www.linkedin.com/voyager/api/messaging/conversations/{conversationId}/events?action=create"
   ],
   "methods": ["geo"],
   "resources": [
@@ -36,6 +39,17 @@
       "verbs": [],
       "read_only": true,
       "fields": ["id", "displayName"]
+    },
+    {
+      "name": "messages",
+      "endpoints": [
+        "GET /messaging/conversations?keyVersion=LEGACY_INBOX",
+        "GET /messaging/conversations/{conversationId}/events",
+        "POST /messaging/conversations/{conversationId}/events?action=create"
+      ],
+      "verbs": ["list", "read", "send"],
+      "read_only": false,
+      "fields": ["id", "participants", "lastActivityAt", "snippet", "sender", "createdAt", "text", "urn"]
     }
   ]
 }

@@ -11,16 +11,17 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jjuanrivvera/linkedin-cli)
 [![Built with cliwright](https://img.shields.io/badge/built_with-cliwright-1f6feb)](https://cliwright.jjuanrivvera.com)
 
-**Read-only LinkedIn job search from your terminal — jobs, companies, geo lookup over the unofficial Voyager API, agent-friendly output (JSON/YAML/CSV/MCP).**
+**LinkedIn from your terminal — job search, companies, geo lookup and messaging over the unofficial Voyager API, agent-friendly output (JSON/YAML/CSV/MCP).**
 
 [Documentation](https://jjuanrivvera.github.io/linkedin-cli/) · [Command reference](https://jjuanrivvera.github.io/linkedin-cli/commands/linkedin/)
 
 </div>
 
-`linkedin` is a fast, scriptable, **read-only** command-line client for LinkedIn's internal
-**Voyager** API: search jobs, fetch a job's full detail, look up a company, and resolve a location
-to a geoId — with machine-first output (JSON/YAML/CSV, `-o id`, `--jq`) built for shell pipelines
-and AI agents.
+`linkedin` is a fast, scriptable, **read-first** command-line client for LinkedIn's internal
+**Voyager** API: search jobs, fetch a job's full detail, look up a company, resolve a location
+to a geoId, and read your message inbox — with machine-first output (JSON/YAML/CSV, `-o id`,
+`--jq`) built for shell pipelines and AI agents. The one write, `messages send`, is
+confirmation-gated and daily-capped.
 
 > ## ⚠️ Unofficial API — use at your own risk
 >
@@ -34,8 +35,11 @@ and AI agents.
 > - **Use your own account**, on **your own machine**, over a **residential IP** — never a shared
 >   or server IP.
 > - **Keep volume low.** Ban-safety is **on by default** (human-paced 3–15s delays, one request in
->   flight, a ~30/day job-detail cap, and **no retry** on throttle/soft-block/challenge). Don't
->   defeat it.
+>   flight, a ~30/day job-detail cap, a **20/day message-send cap**, and **no retry** on
+>   throttle/soft-block/challenge or on any send). Don't defeat it.
+> - **Messaging is the riskiest thing here.** Automated messaging is the classic account-restriction
+>   trigger. `messages send` warns, asks for confirmation (skip with `--yes`), and refuses once the
+>   daily send cap is spent. Prefer reading over sending.
 > - Treat this as a personal job-hunt helper, not a scraper. If LinkedIn soft-blocks you (HTTP
 >   `999`) or issues a challenge, **stop** — the CLI will tell you to.
 >
@@ -98,6 +102,11 @@ linkedin jobs get 4012345678 --jq '.description.text'
 # A company by its slug (universalName)
 linkedin company get stripe --jq '.name'
 
+# Messaging (read-first; sending is the riskiest command — warns, confirms, and is capped)
+linkedin messages list --count 10 -o json
+linkedin messages read 2-YWJjZGVm==
+linkedin messages send 2-YWJjZGVm== --text "Thanks, talk soon!" --dry-run
+
 # See the exact request without sending it
 linkedin jobs search --keywords go --remote --since 24h --dry-run
 ```
@@ -115,6 +124,7 @@ linkedin jobs search --keywords go --remote --since 24h --dry-run
 | `--limit` / `--count` / `--all` | pagination controls |
 | `-o table\|json\|yaml\|csv\|id`, `--jq`, `--columns`, `--dry-run` | output & inspection |
 | `--daily-cap N` | raise the ban-safety daily job-detail cap (default 30) |
+| `--daily-send-cap N` | raise the ban-safety daily message-send cap (default 20) |
 
 ## Output & agents
 
@@ -123,9 +133,11 @@ One renderer serves every command: `table` (default, colored only on a TTY; hono
 global `--jq` slices any response.
 
 - **MCP server:** `linkedin mcp` exposes the read commands as annotated MCP tools for an AI host.
+  `messages send` carries the `destructiveHint` so a well-behaved host treats it as unsafe, never
+  auto-approving it.
 - **Agent guard:** `linkedin agent guard --host claude-code|codex|opencode` emits safety config from
-  the live command tree (this is a read-only CLI, so it allows reads and blocks `alias set`; any
-  future write/destructive command is hard-blocked automatically).
+  the live command tree (reads are allowed; `messages send` and `alias set` are hard-blocked, and
+  any future write/destructive command is hard-blocked automatically).
 
 ## Schema drift
 
