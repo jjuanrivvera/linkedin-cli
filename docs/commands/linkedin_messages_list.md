@@ -9,8 +9,8 @@ last-activity time, and a snippet of the latest message. The full conversation e
 available under -o json.
 
 ⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
-legacy inbox endpoints with YOUR session. Automated messaging is the classic trigger for a
-LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
 over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).
 
 ```

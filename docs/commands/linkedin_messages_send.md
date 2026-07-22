@@ -13,8 +13,8 @@ retries a failed send. With --dry-run it prints the equivalent curl (cookies red
 sends nothing.
 
 ⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
-legacy inbox endpoints with YOUR session. Automated messaging is the classic trigger for a
-LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
 over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).
 
 ```
@@ -24,9 +24,9 @@ linkedin messages send <conversationId> --text <message> [flags]
 ### Examples
 
 ```
-  linkedin messages send 2-YWJjZGVm== --text "Thanks, talk soon!"
-  linkedin messages send 2-YWJjZGVm== --text "On my way" --yes
-  linkedin messages send 2-YWJjZGVm== --text "hello" --dry-run
+  linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "Thanks, talk soon!"
+  linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "On my way" --yes
+  linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "hello" --dry-run
 ```
 
 ### Options

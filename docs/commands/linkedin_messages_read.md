@@ -9,8 +9,8 @@ The conversation id comes from `linkedin messages list`. Full event entities are
 under -o json.
 
 ⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
-legacy inbox endpoints with YOUR session. Automated messaging is the classic trigger for a
-LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
 over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).
 
 ```
@@ -20,8 +20,8 @@ linkedin messages read <conversationId> [flags]
 ### Examples
 
 ```
-  linkedin messages read 2-YWJjZGVm==
-  linkedin messages read 2-YWJjZGVm== -o json --jq '.[].text'
+  linkedin messages read urn:li:msg_conversation:2-YWJjZGVm==
+  linkedin messages read urn:li:msg_conversation:2-YWJjZGVm== -o json --jq '.[].text'
 ```
 
 ### Options

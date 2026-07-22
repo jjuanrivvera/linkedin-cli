@@ -4,12 +4,13 @@ Read and send LinkedIn messages (⚠ elevated ban risk)
 
 ### Synopsis
 
-List your conversations, read a thread, and send a text message via LinkedIn's legacy
-Voyager messaging endpoints.
+List your conversations, read a thread, and send a text message via LinkedIn's GraphQL
+messenger endpoints. Conversation ids are full msg_conversation URNs; the id printed by
+`messages list` is exactly what `read` and `send` accept.
 
 ⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
-legacy inbox endpoints with YOUR session. Automated messaging is the classic trigger for a
-LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
 over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).
 
 ### Options

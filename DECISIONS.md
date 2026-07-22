@@ -20,41 +20,70 @@ during this build; everything is exercised against `httptest` fakes.**
    so it is the low-risk probe used by `doctor --live`. "remote" is NOT a geo — it is
    `workplaceType:List(2)`.
 
-## Messaging (the one write surface — added in feat/messages)
+## Messaging (the one write surface — added in feat/messages; migrated to GraphQL in #27–#29)
 
-23. **Use the community-proven LEGACY Voyager messaging endpoints, NOT the newer
-    voyagerMessagingDash GraphQL surface** → list is
-    `GET /voyager/api/messaging/conversations?keyVersion=LEGACY_INBOX`, a thread is
-    `GET /voyager/api/messaging/conversations/{conversationId}/events`, and a send is
-    `POST /voyager/api/messaging/conversations/{conversationId}/events?action=create`. Why:
-    these are the exact endpoints the tomquirk/linkedin-api Python library has driven for years
-    — well-understood, stable, and normalized-envelope shaped like the rest of this client. The
-    Dash/GraphQL messaging surface is newer, less documented in the community, and would need a
-    different query mechanism. Every drift-prone string (paths, `keyVersion` value, the
-    `action=create` token, the `$type` match tokens, the MessageCreate body key) lives behind a
-    named constant in `internal/voyager/schema.go`; parsing (`ParseConversations`/`ParseEvents`)
-    matches `$type` by CONTAINS and tolerates both bare-string and `{text}` attributedBody
-    shapes via the existing `textOrStr`, exactly like `normalize.go`.
-24. **Send body is the legacy MessageCreate envelope** →
-    `{"eventCreate":{"value":{"com.linkedin.voyager.messaging.create.MessageCreate":{"attributedBody":{"text":"<text>","attributes":[]},"attachments":[]}}}}`,
-    POSTed as `application/json`, expecting **201 Created**. Why: this is the payload the web
-    client and the community libraries send; the `MessageCreate` type key is the drift-prone part
-    and is pinned in `schema.go` (`KeyMessageCreate`).
+23. **SUPERSEDED by #27.** ~~Use the community-proven LEGACY Voyager messaging endpoints
+    (`/messaging/conversations?keyVersion=LEGACY_INBOX`, `/{id}/events`).~~ Those endpoints are
+    DEAD — a live smoke on a real session (2026-07-22) returned HTTP 500 on `messages list`. The
+    web app abandoned the legacy inbox for the GraphQL "messenger" surface. Migrated in #27.
+24. **SUPERSEDED by #29.** ~~Send body is the legacy MessageCreate envelope POSTed to
+    `/{id}/events?action=create` as application/json.~~ Replaced by the Dash createMessage payload
+    (#29).
 25. **`messages send` charges a NEW persisted daily send cap (default 20/day,
     `--daily-send-cap`)** → the same persistence mechanism the job-detail cap uses
     (`internal/api/pacer.go`), generalized to named counters in one `state.json` (the legacy
     top-level `count` field stays the job-detail counter for backward compatibility; the send
     counter lives under `counters.message_send`). It is charged BEFORE the request and refuses
-    (does not send) when spent. Why: automated messaging is the classic LinkedIn
-    account-restriction trigger, so the riskiest command gets its own tighter budget.
-26. **No retry on the send POST** → the client core gained a `postVoyager` mirroring `getVoyager`'s
+    (does not send) when spent. STILL APPLIES after the GraphQL migration. Why: automated
+    messaging is the classic LinkedIn account-restriction trigger, so the riskiest command gets
+    its own tighter budget.
+26. **No retry on the send POST** → the client core's `postVoyager` mirrors `getVoyager`'s
     header/cookie/csrf handling (Cookie keeps JSESSIONID's quotes; `csrf-token` strips them), but
     `retry.go` stays idempotent-only: a POST is passed with a zero retry budget and fired at most
-    ONCE. Why: a duplicate DM is worse than a failed one, and retry-hammering a write is exactly
-    what flags an account. Additionally `messages send` prints a stderr warning and requires
+    ONCE. STILL APPLIES to the new Dash send path (asserted by `TestSendMessage_NeverRetriesPOST`).
+    Why: a duplicate DM is worse than a failed one, and retry-hammering a write is exactly what
+    flags an account. Additionally `messages send` prints a stderr warning and requires
     interactive confirmation (skippable with `--yes`), honors global `--dry-run` (prints the
-    equivalent curl with cookies REDACTED, sends nothing, needs no session), and is classified
-    **destructive** so every agent guard (MCP + Bash) hard-blocks it, fail-closed.
+    equivalent curl with cookies REDACTED, sends nothing, needs no session — the mailbox URN is a
+    readable `urn:li:fsd_profile:<ME>` placeholder offline), and is classified **destructive** so
+    every agent guard (MCP + Bash) hard-blocks it, fail-closed.
+
+## Messaging GRAPHQL migration (feat/messages, 2026-07-22 — replaces the dead legacy surface)
+
+27. **Migrate messaging from the dead legacy inbox to the CURRENT GraphQL "messenger" surface** →
+    resolve the caller's mailbox URN once from `GET /voyager/api/me`
+    (`.miniProfile.dashEntityUrn`, else convert `.miniProfile.entityUrn` `fs_miniProfile`→`fsd_profile`;
+    `GetMailboxURN` caches it per process), then list via
+    `GET /voyager/api/voyagerMessagingGraphQL/graphql?queryId=<LIST_QUERY_ID>&variables=(mailboxUrn:<esc>)`
+    and read via `?queryId=<MESSAGES_QUERY_ID>&variables=(conversationUrn:<esc>,countBefore:N,countAfter:0,deliveredAt:<nowMs>)`.
+    The GraphQL GETs carry `accept: application/graphql` (NOT the normalized+json accept). Response
+    envelope is `{data:{messengerConversationsBySyncToken:{elements:[…]}}}` /
+    `{data:{messengerMessagesByAnchorTimestamp:{elements:[…]}}}` — parsed by
+    `ParseConversations`/`ParseMessages` in `internal/voyager/messaging.go`, matching participant
+    names defensively (`participantType.member.{firstName,lastName}` as `{text}` or bare string;
+    non-member participants skipped). A missing result container returns `ErrMessagingSchemaMoved`
+    pointing at schema.go. **Conversation ids are now full `urn:li:msg_conversation:…` URNs** — what
+    `messages list` prints is exactly what `read`/`send` accept (a bare id is prefixed defensively).
+    The `variables=(...)` blob is built BY HAND with the generalized `buildVariablesBlob` (structural
+    `(),:` literal, values URL-escaped), the same discipline as the job-search `query=(...)` blob —
+    `deliveredAt` uses an INJECTED clock (`now time.Time`), never a raw `time.Now()` in the call path.
+28. **The queryId hashes DRIFT HARD — harder and more often than the decorationIds** → they are tied
+    to LinkedIn's frontend build and rotate frequently. `LIST_QUERY_ID`
+    (`messengerConversations.f0873b936b43ed663997b215b2c28359`) and `MESSAGES_QUERY_ID`
+    (`messengerMessages.4088d03bc70c91c3fa68965cb42336de`), the two GraphQL/Dash URLs, and the
+    response-container field keys all live behind named constants in the clearly-marked "MESSENGER
+    GRAPHQL" section of `internal/voyager/schema.go`. When messaging 500s/empties, REFRESH them from
+    a maintained client (mautrix/linkedin `pkg/linkedingo/constants.go`) or the browser Network tab.
+    These hashes are pinned from mautrix/linkedin (verified 2026-07-22, best-known current); the FINAL
+    truth is a live smoke against a real session, which was NOT run during this build.
+29. **Send is the Dash createMessage payload** →
+    `POST /voyager/api/voyagerMessagingDashMessengerMessages?action=createMessage`, Content-Type
+    `text/plain; charset=UTF-8` (yes, plain — that's what the web sends), csrf + x-restli + x-li-lang
+    headers. Body: `{"message":{"body":{"text":"<text>"},"conversationUrn":"<urn:li:msg_conversation:…>","originToken":"<uuid-v4>"},"mailboxUrn":"<urn:li:fsd_profile:…>","trackingId":"<16-char>","dedupeByClientGeneratedToken":true}`,
+    expecting **200 or 201**. `originToken` (uuid v4, crypto/rand) and `trackingId` (16 chars) come
+    from injectable `var` seams (`newOriginToken`/`newTrackingID`), never raw rand in the call path,
+    so tests assert a deterministic body. The JSON is marshalled with `SetEscapeHTML(false)` so a
+    body containing `<`/`>`/`&` (or the dry-run placeholder) stays readable in the previewed curl.
 
 ## Auth — borrow the browser session (cookie auth)
 
@@ -162,9 +191,11 @@ during this build; everything is exercised against `httptest` fakes.**
 ## Completeness
 
 - `api_method_total = 7` is the full enumerated surface this CLI targets (see
-  `enumerated_endpoints`): the 4 read-only job-search/company/geo endpoints plus the 3
-  community-proven legacy messaging endpoints (conversations list, thread events, send). The
-  manifest covers all 7 (jobs search/get, company get, geo, messages list/read/send), so
-  `make spec-completeness` reports 100%. No coverage-waiver needed. Other write endpoints
-  (apply/save/connect) remain OUT OF SCOPE — this stays a ban-safety-first tool whose only write
-  is the confirmation-gated, daily-capped `messages send`.
+  `enumerated_endpoints`): the 4 read-only job-search/company/geo endpoints plus the 3 messaging
+  methods — now the CURRENT GraphQL messenger surface (conversations list, thread read, send), NOT
+  the dead legacy inbox (#27–#29). The GraphQL calls depend on an internal `GET /me` to resolve the
+  mailbox URN; that is a dependency of the messaging methods, not a separately-counted user-facing
+  method, so `api_method_total` stays 7. The manifest covers all 7 (jobs search/get, company get,
+  geo, messages list/read/send), so `make spec-completeness` reports 100%. No coverage-waiver
+  needed. Other write endpoints (apply/save/connect) remain OUT OF SCOPE — this stays a
+  ban-safety-first tool whose only write is the confirmation-gated, daily-capped `messages send`.

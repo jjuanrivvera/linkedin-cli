@@ -102,10 +102,12 @@ linkedin jobs get 4012345678 --jq '.description.text'
 # A company by its slug (universalName)
 linkedin company get stripe --jq '.name'
 
-# Messaging (read-first; sending is the riskiest command — warns, confirms, and is capped)
+# Messaging (read-first; sending is the riskiest command — warns, confirms, and is capped).
+# Conversation ids are full urn:li:msg_conversation:… URNs — `list` prints exactly what
+# `read`/`send` accept (paste the id straight through).
 linkedin messages list --count 10 -o json
-linkedin messages read 2-YWJjZGVm==
-linkedin messages send 2-YWJjZGVm== --text "Thanks, talk soon!" --dry-run
+linkedin messages read urn:li:msg_conversation:2-YWJjZGVm==
+linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "Thanks, talk soon!" --dry-run
 
 # See the exact request without sending it
 linkedin jobs search --keywords go --remote --since 24h --dry-run
