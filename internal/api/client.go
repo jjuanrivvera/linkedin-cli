@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jjuanrivvera/linkedin-cli/internal/voyager"
@@ -60,6 +61,11 @@ type Client struct {
 	VerboseOut io.Writer
 
 	maxRetries int
+
+	// mailboxURN caches the caller's resolved fsd_profile mailbox URN for the process (the
+	// GraphQL messenger calls need it; see GetMailboxURN). Guarded by mailboxMu.
+	mailboxMu  sync.Mutex
+	mailboxURN string
 }
 
 // Option configures a Client.
@@ -138,7 +144,19 @@ func (c *Client) getVoyager(ctx context.Context, path, rawQuery string) (json.Ra
 	if rawQuery != "" {
 		u += "?" + rawQuery
 	}
-	return c.get(ctx, u, true)
+	return c.get(ctx, u, true, "")
+}
+
+// getVoyagerGraphQL GETs a Voyager path with the GraphQL accept header (application/graphql)
+// instead of the normalized+json one. rawQuery is assembled by hand (the variables=(...) blob
+// keeps its structural chars literal, exactly like the job-search query blob) so it is passed
+// through untouched.
+func (c *Client) getVoyagerGraphQL(ctx context.Context, path, rawQuery string) (json.RawMessage, error) {
+	u := c.voyagerBase + "/" + strings.TrimLeft(path, "/")
+	if rawQuery != "" {
+		u += "?" + rawQuery
+	}
+	return c.get(ctx, u, true, voyager.AcceptGraphQL)
 }
 
 // getWeb GETs a web-host path (the unauthenticated typeahead). q is encoded normally.
@@ -147,16 +165,20 @@ func (c *Client) getWeb(ctx context.Context, path string, q url.Values) (json.Ra
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	return c.get(ctx, u, false)
+	return c.get(ctx, u, false, "")
 }
 
 // get is the shared request path: it paces (ban-safety), applies the Voyager header set +
 // borrowed-session cookies (when authed), retries only genuine transient failures, and supports
-// dry-run. authed selects whether cookies/csrf are attached.
-func (c *Client) get(ctx context.Context, fullURL string, authed bool) (json.RawMessage, error) {
+// dry-run. authed selects whether cookies/csrf are attached; accept overrides the Accept header
+// (empty keeps the normalized+json default).
+func (c *Client) get(ctx context.Context, fullURL string, authed bool, accept string) (json.RawMessage, error) {
+	if accept == "" {
+		accept = voyager.AcceptNormalized
+	}
 	headers := map[string]string{
 		"User-Agent": c.userAgent,
-		"Accept":     voyager.AcceptNormalized,
+		"Accept":     accept,
 	}
 	liAt, jsession := "", ""
 	if authed {
@@ -227,15 +249,18 @@ func (c *Client) get(ctx context.Context, fullURL string, authed bool) (json.Raw
 // (Cookie keeps JSESSIONID's quotes; csrf-token strips them), paces via the ban-safety
 // Pacer, and supports dry-run. sendWithRetry gives a POST a ZERO retry budget (retry.go is
 // idempotent-only) — a failed send surfaces immediately, it is never re-fired.
-func (c *Client) postVoyager(ctx context.Context, path, rawQuery string, body []byte) (json.RawMessage, error) {
+func (c *Client) postVoyager(ctx context.Context, path, rawQuery, contentType string, body []byte) (json.RawMessage, error) {
 	u := c.voyagerBase + "/" + strings.TrimLeft(path, "/")
 	if rawQuery != "" {
 		u += "?" + rawQuery
 	}
+	if contentType == "" {
+		contentType = "application/json"
+	}
 	headers := map[string]string{
 		"User-Agent":                c.userAgent,
 		"Accept":                    voyager.AcceptNormalized,
-		"Content-Type":              "application/json",
+		"Content-Type":              contentType,
 		"x-restli-protocol-version": voyager.RestliProtoVersion,
 		"x-li-lang":                 voyager.LiLang,
 	}
@@ -303,7 +328,7 @@ func (c *Client) Do(ctx context.Context, path string, q url.Values) (int, json.R
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	body, err := c.get(ctx, u, true)
+	body, err := c.get(ctx, u, true, "")
 	if err != nil {
 		var apiErr *APIError
 		if ok := asAPIError(err, &apiErr); ok {

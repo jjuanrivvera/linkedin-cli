@@ -37,25 +37,65 @@ const (
 // https://www.linkedin.com).
 const TypeaheadPath = "/jobs-guest/api/typeaheadHits"
 
-// Messaging — the community-proven LEGACY Voyager inbox surface (the same
-// conversations/events endpoints the tomquirk/linkedin-api Python library has driven for
-// years), deliberately NOT the newer voyagerMessagingDash GraphQL surface (DECISIONS.md
-// #23). Everything here drifts on LinkedIn's schedule: the paths, the keyVersion value,
-// the create-action token, and the MessageCreate body type key.
+// ┌─────────────────────────────────────────────────────────────────────────────────────┐
+// │  MESSENGER GRAPHQL — queryId hashes rotate on LinkedIn's frontend build.               │
+// │  When `messages list`/`read` starts 500ing or returning empties, REFRESH these two     │
+// │  queryId hashes (and, if the URLs moved, the paths) from a maintained client            │
+// │  (mautrix/linkedin pkg/linkedingo/constants.go) or the browser Network tab. They drift  │
+// │  HARDER and more often than the decorationIds above — this is the #1 messaging break.   │
+// └─────────────────────────────────────────────────────────────────────────────────────┘
+//
+// The web app abandoned the legacy /messaging/conversations + /events inbox (it now 500s,
+// live smoke 2026-07-22) for a GraphQL "messenger" surface. list/read are GraphQL GETs that
+// require the caller's mailbox URN (resolved from /me — see PathMe); send is a Dash POST.
+// DECISIONS.md #27–#29.
 const (
-	// PathConversations lists the inbox; append "/{conversationId}/events" for one
-	// thread (GET) or to send into it (POST ?action=create).
-	PathConversations = "/messaging/conversations"
-	// KeyVersionParam / KeyVersionLegacyInbox select the legacy inbox projection on the
-	// conversations list.
-	KeyVersionParam       = "keyVersion"
-	KeyVersionLegacyInbox = "LEGACY_INBOX"
-	// ActionParam / ActionCreate form the ?action=create query on the send POST.
-	ActionParam  = "action"
-	ActionCreate = "create"
-	// KeyMessageCreate is the fully-qualified type key wrapping the send POST body:
-	// {"eventCreate":{"value":{<KeyMessageCreate>:{"attributedBody":{…},"attachments":[]}}}}.
-	KeyMessageCreate = "com.linkedin.voyager.messaging.create.MessageCreate"
+	// PathMe resolves the caller's own profile (for the mailbox URN the GraphQL calls need).
+	// GET /me → {"miniProfile":{"entityUrn":"urn:li:fs_miniProfile:<ID>","dashEntityUrn":"urn:li:fsd_profile:<ID>"}}.
+	PathMe = "/me"
+
+	// PathMessengerGraphQL is the GraphQL GET surface for conversations + thread reads.
+	// Called with ?queryId=<hash>&variables=(...) and the accept: application/graphql header.
+	PathMessengerGraphQL = "/voyagerMessagingGraphQL/graphql"
+
+	// PathMessengerDashSend is the Dash send endpoint (POST ?action=createMessage,
+	// Content-Type text/plain; charset=UTF-8).
+	PathMessengerDashSend = "/voyagerMessagingDashMessengerMessages"
+
+	// ListQueryID selects the conversations-list GraphQL query. ROTATES on LinkedIn's build.
+	ListQueryID = "messengerConversations.f0873b936b43ed663997b215b2c28359"
+	// MessagesQueryID selects the thread-read GraphQL query. ROTATES on LinkedIn's build.
+	MessagesQueryID = "messengerMessages.4088d03bc70c91c3fa68965cb42336de"
+
+	// AcceptGraphQL is the accept header the GraphQL messenger GETs require (NOT the
+	// normalized+json accept the rest of the client sends).
+	AcceptGraphQL = "application/graphql"
+
+	// ActionCreateMessage is the ?action= token on the Dash send POST.
+	ActionCreateMessage = "createMessage"
+	// SendContentType is the Content-Type the web client sends on the createMessage POST —
+	// plain text, not JSON (that is genuinely what LinkedIn expects).
+	SendContentType = "text/plain; charset=UTF-8"
+
+	// GraphQL variables=(...) key names for the messenger queries.
+	VarMailboxURN      = "mailboxUrn"
+	VarConversationURN = "conversationUrn"
+	VarCountBefore     = "countBefore"
+	VarCountAfter      = "countAfter"
+	VarDeliveredAt     = "deliveredAt"
+
+	// Response-envelope container keys — the GraphQL result field wrapping each elements[]
+	// list. These drift with the queryId, so they live here too.
+	KeyConversationsResult = "messengerConversationsBySyncToken"
+	KeyMessagesResult      = "messengerMessagesByAnchorTimestamp"
+
+	// ConversationURNPrefix is the msg_conversation URN namespace the read/send calls accept
+	// (list emits full URNs; a bare id is prefixed defensively).
+	ConversationURNPrefix = "urn:li:msg_conversation:"
+	// MiniProfileURNPrefix / ProfileURNPrefix bridge the /me miniProfile.entityUrn to the
+	// fsd_profile mailbox URN when dashEntityUrn is absent.
+	MiniProfileURNPrefix = "urn:li:fs_miniProfile:"
+	ProfileURNPrefix     = "urn:li:fsd_profile:"
 )
 
 // Rest.li query keys for the job-search `query=(...)` blob. These are structural names LinkedIn
@@ -101,17 +141,4 @@ const (
 	TypeJobPosting = "JobPosting"
 	// TypeCompany identifies an organization/company entity.
 	TypeCompany = "Company"
-
-	// TypeConversation identifies a legacy-inbox conversation entity
-	// (com.linkedin.voyager.messaging.Conversation).
-	TypeConversation = "Conversation"
-	// TypeMessagingMember identifies a conversation participant entity; its miniProfile
-	// (inline or a *miniProfile reference) carries firstName/lastName.
-	TypeMessagingMember = "MessagingMember"
-	// TypeMessagingEvent identifies a message-thread event entity. The token keeps the
-	// "messaging." prefix so it never collides with the job-search entity types.
-	TypeMessagingEvent = "messaging.Event"
-	// TypeMessageEventContent matches the eventContent key that wraps a text message
-	// (com.linkedin.voyager.messaging.event.MessageEvent).
-	TypeMessageEventContent = "MessageEvent"
 )

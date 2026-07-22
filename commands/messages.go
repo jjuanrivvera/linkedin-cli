@@ -15,8 +15,8 @@ import (
 // as the root command's disclaimer, sharpened for messaging because automated DMs are the
 // classic LinkedIn account-restriction trigger.
 const messagesRiskWarning = `⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
-legacy inbox endpoints with YOUR session. Automated messaging is the classic trigger for a
-LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
 over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).`
 
 var (
@@ -30,8 +30,9 @@ func init() {
 			Use:     "messages",
 			Aliases: []string{"message"},
 			Short:   "Read and send LinkedIn messages (⚠ elevated ban risk)",
-			Long: `List your conversations, read a thread, and send a text message via LinkedIn's legacy
-Voyager messaging endpoints.
+			Long: `List your conversations, read a thread, and send a text message via LinkedIn's GraphQL
+messenger endpoints. Conversation ids are full msg_conversation URNs; the id printed by
+` + "`messages list`" + ` is exactly what ` + "`read`" + ` and ` + "`send`" + ` accept.
 
 ` + messagesRiskWarning,
 		}
@@ -82,15 +83,15 @@ The conversation id comes from ` + "`linkedin messages list`" + `. Full event en
 under -o json.
 
 ` + messagesRiskWarning,
-		Example: `  linkedin messages read 2-YWJjZGVm==
-  linkedin messages read 2-YWJjZGVm== -o json --jq '.[].text'`,
+		Example: `  linkedin messages read urn:li:msg_conversation:2-YWJjZGVm==
+  linkedin messages read urn:li:msg_conversation:2-YWJjZGVm== -o json --jq '.[].text'`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, _, err := d.getAPIClient()
 			if err != nil {
 				return err
 			}
-			res, err := c.GetConversationEvents(cmd.Context(), args[0])
+			res, err := c.GetConversationEvents(cmd.Context(), args[0], time.Now())
 			if err != nil {
 				return err
 			}
@@ -118,9 +119,9 @@ retries a failed send. With --dry-run it prints the equivalent curl (cookies red
 sends nothing.
 
 ` + messagesRiskWarning,
-		Example: `  linkedin messages send 2-YWJjZGVm== --text "Thanks, talk soon!"
-  linkedin messages send 2-YWJjZGVm== --text "On my way" --yes
-  linkedin messages send 2-YWJjZGVm== --text "hello" --dry-run`,
+		Example: `  linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "Thanks, talk soon!"
+  linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "On my way" --yes
+  linkedin messages send urn:li:msg_conversation:2-YWJjZGVm== --text "hello" --dry-run`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(text) == "" {

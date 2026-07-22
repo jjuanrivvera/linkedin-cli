@@ -7,17 +7,20 @@ import (
 	"strings"
 )
 
-// ErrMessagingSchemaMoved is the messaging twin of ErrSchemaMoved: a conversations/events
-// page decoded structurally but contained no recognizable messaging entities while its paging
-// says content exists — the signature of a Voyager messaging schema rotation, NOT an empty
-// inbox (which has total 0 and is fine).
+// ErrMessagingSchemaMoved is the messaging twin of ErrSchemaMoved: a GraphQL messenger
+// response decoded structurally but did not carry the expected result container
+// (messengerConversationsBySyncToken / messengerMessagesByAnchorTimestamp). That is the
+// signature of a queryId rotation or a renamed GraphQL field — NOT an empty inbox (which
+// carries the container with an empty elements[]). The queryId hashes drift HARD; see the
+// MESSENGER GRAPHQL banner in internal/voyager/schema.go.
 var ErrMessagingSchemaMoved = errors.New(
-	"no recognizable messaging entities in the response — LinkedIn likely rotated the Voyager " +
-		"messaging schema ($type / eventContent key / keyVersion). Check and bump the constants " +
-		"in internal/voyager/schema.go")
+	"no recognizable messenger result in the GraphQL response — LinkedIn likely rotated the " +
+		"queryId hash or renamed the result field. Refresh the queryId/field constants in the " +
+		"MESSENGER GRAPHQL section of internal/voyager/schema.go")
 
-// Conversation is the thin, table-friendly slice of one inbox conversation. The complete
-// entity is preserved in Raw for -o json.
+// Conversation is the thin, table-friendly slice of one messenger conversation. The complete
+// element is preserved in Raw for -o json. ID is the FULL msg_conversation URN — exactly what
+// `messages read` / `messages send` accept (list output feeds read/send verbatim).
 type Conversation struct {
 	ID             string          `json:"id,omitempty"`
 	Participants   []string        `json:"participants,omitempty"`
@@ -27,241 +30,189 @@ type Conversation struct {
 	Raw            json.RawMessage `json:"-"`
 }
 
-// Message is one resolved thread event: who said what, when. Raw preserves the full event
-// entity for -o json.
+// Message is one resolved thread message: who said what, when. Raw preserves the full element
+// for -o json.
 type Message struct {
 	Sender    string          `json:"sender,omitempty"`
-	CreatedAt int64           `json:"createdAt,omitempty"` // epoch ms
+	CreatedAt int64           `json:"createdAt,omitempty"` // deliveredAt, epoch ms
 	Text      string          `json:"text,omitempty"`
 	URN       string          `json:"urn,omitempty"`
 	Raw       json.RawMessage `json:"-"`
 }
 
-// conversationEnt is the field subset read off a legacy Conversation entity. Participants
-// and events arrive as normalized *reference lists resolved against included[].
-type conversationEnt struct {
-	EntityURN       string   `json:"entityUrn"`
-	LastActivityAt  int64    `json:"lastActivityAt"`
-	ParticipantRefs []string `json:"*participants"`
-	EventRefs       []string `json:"*events"`
+// gqlMember is the {firstName,lastName} pair on a participant's member union. Both names are
+// attributed strings ({text}) but a bare "…" string is tolerated via textOrStr.
+type gqlMember struct {
+	FirstName textOrStr `json:"firstName"`
+	LastName  textOrStr `json:"lastName"`
 }
 
-// eventEnt is the field subset read off a legacy Event entity. `from` is a *reference in
-// the normalized envelope but arrives inline on some variants — both are tolerated.
-type eventEnt struct {
-	EntityURN    string                     `json:"entityUrn"`
-	CreatedAt    int64                      `json:"createdAt"`
-	FromRef      string                     `json:"*from"`
-	FromInline   json.RawMessage            `json:"from"`
-	EventContent map[string]json.RawMessage `json:"eventContent"`
+// gqlParticipant is a conversationParticipant / message sender. participantType is a union;
+// only the member variant carries a person name (other variants — org, bot — yield "").
+type gqlParticipant struct {
+	ParticipantType struct {
+		Member *gqlMember `json:"member"`
+	} `json:"participantType"`
 }
 
-// ParseConversations decodes a normalized legacy-inbox page into thin conversations sorted
-// most-recent-first. A page whose paging says content exists but yields zero recognizable
-// conversation entities returns ErrMessagingSchemaMoved, never a silent empty inbox.
+func (p gqlParticipant) name() string {
+	if p.ParticipantType.Member == nil {
+		return ""
+	}
+	return joinName(p.ParticipantType.Member.FirstName.Text, p.ParticipantType.Member.LastName.Text)
+}
+
+// gqlConversation is the field subset read off a messengerConversationsBySyncToken element.
+type gqlConversation struct {
+	EntityURN                string           `json:"entityUrn"`
+	LastActivityAt           int64            `json:"lastActivityAt"`
+	ConversationParticipants []gqlParticipant `json:"conversationParticipants"`
+	Messages                 struct {
+		Elements []json.RawMessage `json:"elements"`
+	} `json:"messages"`
+}
+
+// gqlMessage is the field subset read off a messengerMessagesByAnchorTimestamp element (and,
+// for the inbox snippet, off a conversation's embedded messages.elements[0]).
+type gqlMessage struct {
+	EntityURN   string         `json:"entityUrn"`
+	DeliveredAt int64          `json:"deliveredAt"`
+	Sender      gqlParticipant `json:"sender"`
+	Body        struct {
+		Text string `json:"text"`
+	} `json:"body"`
+}
+
+// ParseConversations decodes a messenger conversations GraphQL page into thin conversations
+// sorted most-recent-first. A response missing the result container returns
+// ErrMessagingSchemaMoved (a rotated queryId / renamed field), never a silent empty inbox — an
+// honest empty inbox carries the container with an empty elements[].
 func ParseConversations(raw json.RawMessage) ([]Conversation, error) {
-	var env envelope
-	if err := json.Unmarshal(raw, &env); err != nil {
+	elements, err := gqlElements(raw, KeyConversationsResult)
+	if err != nil {
 		return nil, err
 	}
-	index, _ := indexIncluded(env.Included)
-
-	var out []Conversation
-	for _, ent := range env.Included {
-		var h entityHeader
-		if json.Unmarshal(ent, &h) != nil || !typeContains(h.Type, TypeConversation) {
-			continue
-		}
-		var c conversationEnt
-		_ = json.Unmarshal(ent, &c)
+	out := make([]Conversation, 0, len(elements))
+	for _, el := range elements {
+		var c gqlConversation
+		_ = json.Unmarshal(el, &c)
 		conv := Conversation{
-			ID:             lastURNSegment(c.EntityURN),
-			LastActivityAt: c.LastActivityAt,
+			ID:             c.EntityURN,
 			URN:            c.EntityURN,
-			Raw:            ent,
+			LastActivityAt: c.LastActivityAt,
+			Snippet:        latestMessageText(c.Messages.Elements),
+			Raw:            el,
 		}
-		for _, ref := range c.ParticipantRefs {
-			if name := memberName(index, ref); name != "" {
-				conv.Participants = append(conv.Participants, name)
+		for _, p := range c.ConversationParticipants {
+			if n := p.name(); n != "" {
+				conv.Participants = append(conv.Participants, n)
 			}
 		}
-		conv.Snippet = latestEventText(index, c.EventRefs)
 		out = append(out, conv)
-	}
-
-	if len(out) == 0 {
-		if total, _, _ := readPaging(unwrapData(env.Data)); total > 0 {
-			return nil, ErrMessagingSchemaMoved
-		}
-		return out, nil
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].LastActivityAt > out[j].LastActivityAt })
 	return out, nil
 }
 
-// ParseEvents decodes a normalized conversation-events page into resolved messages sorted
-// oldest→newest. Same drift rule as ParseConversations: positive paging with zero
-// recognizable events is a moved schema, not an empty thread.
-func ParseEvents(raw json.RawMessage) ([]Message, error) {
-	var env envelope
-	if err := json.Unmarshal(raw, &env); err != nil {
+// ParseMessages decodes a messenger thread GraphQL page into resolved messages sorted
+// oldest→newest. Same drift rule as ParseConversations.
+func ParseMessages(raw json.RawMessage) ([]Message, error) {
+	elements, err := gqlElements(raw, KeyMessagesResult)
+	if err != nil {
 		return nil, err
 	}
-	index, _ := indexIncluded(env.Included)
-
-	var out []Message
-	for _, ent := range env.Included {
-		if msg, ok := messageFromEvent(ent, index); ok {
-			out = append(out, msg)
-		}
-	}
-	if len(out) == 0 {
-		if total, _, _ := readPaging(unwrapData(env.Data)); total > 0 {
-			return nil, ErrMessagingSchemaMoved
-		}
-		return out, nil
+	out := make([]Message, 0, len(elements))
+	for _, el := range elements {
+		var m gqlMessage
+		_ = json.Unmarshal(el, &m)
+		out = append(out, Message{
+			Sender:    m.Sender.name(),
+			CreatedAt: m.DeliveredAt,
+			Text:      m.Body.Text,
+			URN:       m.EntityURN,
+			Raw:       el,
+		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
 	return out, nil
 }
 
-// messageFromEvent resolves one Event entity into a Message, or (…,false) for non-events.
-func messageFromEvent(raw json.RawMessage, index map[string]json.RawMessage) (Message, bool) {
-	var h entityHeader
-	if json.Unmarshal(raw, &h) != nil || !typeContains(h.Type, TypeMessagingEvent) {
-		return Message{}, false
+// gqlElements pulls the elements[] list out of {data:{<key>:{elements:[…]}}}. A missing result
+// container (key absent) is a moved schema (ErrMessagingSchemaMoved); the container present
+// with an empty (or absent) elements[] is an honest empty inbox/thread. Malformed JSON returns
+// the decode error.
+func gqlElements(raw json.RawMessage, key string) ([]json.RawMessage, error) {
+	var env struct {
+		Data map[string]json.RawMessage `json:"data"`
 	}
-	var ev eventEnt
-	_ = json.Unmarshal(raw, &ev)
-	msg := Message{
-		CreatedAt: ev.CreatedAt,
-		Text:      eventMessageText(ev.EventContent),
-		URN:       ev.EntityURN,
-		Raw:       raw,
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, err
 	}
-	if ev.FromRef != "" {
-		msg.Sender = memberName(index, ev.FromRef)
+	container, ok := env.Data[key]
+	if !ok {
+		return nil, ErrMessagingSchemaMoved
 	}
-	if msg.Sender == "" && len(ev.FromInline) > 0 {
-		msg.Sender = nameFromInlineFrom(ev.FromInline, index)
+	var wrap struct {
+		Elements []json.RawMessage `json:"elements"`
 	}
-	return msg, true
+	if err := json.Unmarshal(container, &wrap); err != nil {
+		return nil, err
+	}
+	return wrap.Elements, nil
 }
 
-// eventMessageText pulls the message text out of eventContent. The payload sits under a
-// fully-qualified MessageEvent key (matched by CONTAINS, per the drift rule), with a
-// flattened attributedBody variant tolerated as a fallback.
-func eventMessageText(content map[string]json.RawMessage) string {
-	for k, v := range content {
-		if typeContains(k, TypeMessageEventContent) {
-			return attributedText(v)
-		}
-	}
-	if v, ok := content["attributedBody"]; ok {
-		var t textOrStr
-		_ = json.Unmarshal(v, &t)
-		return t.Text
-	}
-	return ""
-}
-
-// attributedText reads a MessageEvent payload's text: attributedBody first (either the
-// {"text":…} object or a bare string, via textOrStr), then the plain body fallback.
-func attributedText(raw json.RawMessage) string {
-	var m struct {
-		AttributedBody textOrStr `json:"attributedBody"`
-		Body           textOrStr `json:"body"`
-	}
-	if json.Unmarshal(raw, &m) != nil {
-		return ""
-	}
-	if m.AttributedBody.Text != "" {
-		return m.AttributedBody.Text
-	}
-	return m.Body.Text
-}
-
-// latestEventText resolves a conversation's event references and returns the newest
-// resolvable message text — the inbox snippet.
-func latestEventText(index map[string]json.RawMessage, refs []string) string {
-	best := Message{CreatedAt: -1}
-	for _, ref := range refs {
-		ent, ok := index[ref]
-		if !ok {
+// latestMessageText returns the newest embedded message's body text — the inbox snippet.
+// LinkedIn ships messages.elements[0] as the latest, but we scan defensively for the
+// highest deliveredAt (falling back to the first non-empty body) so wire order can't fool us.
+func latestMessageText(elements []json.RawMessage) string {
+	best := gqlMessage{DeliveredAt: -1}
+	found := false
+	for _, el := range elements {
+		var m gqlMessage
+		if json.Unmarshal(el, &m) != nil || m.Body.Text == "" {
 			continue
 		}
-		if msg, ok := messageFromEvent(ent, index); ok && msg.Text != "" && msg.CreatedAt > best.CreatedAt {
-			best = msg
+		if !found || m.DeliveredAt > best.DeliveredAt {
+			best = m
+			found = true
 		}
 	}
-	return best.Text
-}
-
-// memberName resolves a *participants / *from reference to a display name via the entity
-// pool: member entity → miniProfile (inline or referenced) → firstName lastName.
-func memberName(index map[string]json.RawMessage, urn string) string {
-	ent, ok := index[urn]
-	if !ok {
+	if !found {
 		return ""
 	}
-	return nameFromMemberJSON(ent, index)
+	return best.Body.Text
 }
 
-// nameFromMemberJSON reads a display name from a MessagingMember-shaped blob. It tolerates
-// the miniProfile arriving inline, as a *miniProfile reference, or the blob itself being a
-// MiniProfile with firstName/lastName directly.
-func nameFromMemberJSON(raw json.RawMessage, index map[string]json.RawMessage) string {
-	var m struct {
-		MiniProfileRef string          `json:"*miniProfile"`
-		MiniProfile    json.RawMessage `json:"miniProfile"`
-		FirstName      textOrStr       `json:"firstName"`
-		LastName       textOrStr       `json:"lastName"`
+// MailboxURNFromMe resolves the caller's fsd_profile mailbox URN from a /me response. It
+// prefers miniProfile.dashEntityUrn; absent that, it converts miniProfile.entityUrn
+// (urn:li:fs_miniProfile:<ID> → urn:li:fsd_profile:<ID>). ErrMessagingSchemaMoved when neither
+// is present — /me shape moved.
+func MailboxURNFromMe(raw json.RawMessage) (string, error) {
+	var me struct {
+		MiniProfile struct {
+			EntityURN     string `json:"entityUrn"`
+			DashEntityURN string `json:"dashEntityUrn"`
+		} `json:"miniProfile"`
 	}
-	if json.Unmarshal(raw, &m) != nil {
-		return ""
+	if err := json.Unmarshal(raw, &me); err != nil {
+		return "", err
 	}
-	if name := joinName(m.FirstName.Text, m.LastName.Text); name != "" {
-		return name
+	if me.MiniProfile.DashEntityURN != "" {
+		return me.MiniProfile.DashEntityURN, nil
 	}
-	if len(m.MiniProfile) > 0 {
-		if name := profileName(m.MiniProfile); name != "" {
-			return name
-		}
+	if id := strings.TrimPrefix(me.MiniProfile.EntityURN, MiniProfileURNPrefix); id != me.MiniProfile.EntityURN && id != "" {
+		return ProfileURNPrefix + id, nil
 	}
-	if m.MiniProfileRef != "" {
-		if ent, ok := index[m.MiniProfileRef]; ok {
-			return profileName(ent)
-		}
-	}
-	return ""
+	return "", ErrMessagingSchemaMoved
 }
 
-// nameFromInlineFrom handles a non-normalized inline `from`: either a type-keyed wrapper
-// ({"com.linkedin.…MessagingMember":{…}}) or the member object directly.
-func nameFromInlineFrom(raw json.RawMessage, index map[string]json.RawMessage) string {
-	var wrapper map[string]json.RawMessage
-	if json.Unmarshal(raw, &wrapper) == nil {
-		for k, v := range wrapper {
-			if typeContains(k, TypeMessagingMember) {
-				if name := nameFromMemberJSON(v, index); name != "" {
-					return name
-				}
-			}
-		}
+// EnsureConversationURN prefixes a bare conversation id with the msg_conversation namespace so
+// read/send accept either the full URN that `messages list` prints or a bare id.
+func EnsureConversationURN(id string) string {
+	if strings.HasPrefix(id, "urn:") {
+		return id
 	}
-	return nameFromMemberJSON(raw, index)
-}
-
-// profileName reads firstName/lastName off a MiniProfile blob.
-func profileName(raw json.RawMessage) string {
-	var p struct {
-		FirstName textOrStr `json:"firstName"`
-		LastName  textOrStr `json:"lastName"`
-	}
-	if json.Unmarshal(raw, &p) != nil {
-		return ""
-	}
-	return joinName(p.FirstName.Text, p.LastName.Text)
+	return ConversationURNPrefix + id
 }
 
 func joinName(first, last string) string {

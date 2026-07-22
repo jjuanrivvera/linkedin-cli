@@ -8,34 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// conversationsFixture exercises every participant/miniProfile shape the parser tolerates:
-// a *miniProfile reference (Alice) and an inline miniProfile (Bob), plus a snippet event per
-// conversation (one {text} object, one bare-string attributedBody).
-const conversationsFixture = `{
-  "data":{"data":{"paging":{"total":2,"start":0,"count":2},"*elements":[
-    "urn:li:fs_conversation:2-AAA==","urn:li:fs_conversation:2-BBB=="]}},
-  "included":[
-    {"$type":"com.linkedin.voyager.messaging.Conversation","entityUrn":"urn:li:fs_conversation:2-AAA==",
-     "lastActivityAt":1721500000000,
-     "*participants":["urn:li:fs_messagingMember:(2-AAA==,ACoAA1)"],
-     "*events":["urn:li:fs_event:(2-AAA==,S1)"]},
-    {"$type":"com.linkedin.voyager.messaging.Conversation","entityUrn":"urn:li:fs_conversation:2-BBB==",
-     "lastActivityAt":1721600000000,
-     "*participants":["urn:li:fs_messagingMember:(2-BBB==,ACoAA2)"],
-     "*events":["urn:li:fs_event:(2-BBB==,S2)"]},
-    {"$type":"com.linkedin.voyager.messaging.MessagingMember","entityUrn":"urn:li:fs_messagingMember:(2-AAA==,ACoAA1)",
-     "*miniProfile":"urn:li:fs_miniProfile:ACoAA1"},
-    {"$type":"com.linkedin.voyager.messaging.MessagingMember","entityUrn":"urn:li:fs_messagingMember:(2-BBB==,ACoAA2)",
-     "miniProfile":{"firstName":"Bob","lastName":"Jones"}},
-    {"$type":"com.linkedin.voyager.identity.shared.MiniProfile","entityUrn":"urn:li:fs_miniProfile:ACoAA1",
-     "firstName":"Alice","lastName":"Smith"},
-    {"$type":"com.linkedin.voyager.messaging.Event","entityUrn":"urn:li:fs_event:(2-AAA==,S1)",
-     "createdAt":1721500000000,"*from":"urn:li:fs_messagingMember:(2-AAA==,ACoAA1)",
-     "eventContent":{"com.linkedin.voyager.messaging.event.MessageEvent":{"attributedBody":{"text":"hey there","attributes":[]}}}},
-    {"$type":"com.linkedin.voyager.messaging.Event","entityUrn":"urn:li:fs_event:(2-BBB==,S2)",
-     "createdAt":1721600000000,"*from":"urn:li:fs_messagingMember:(2-BBB==,ACoAA2)",
-     "eventContent":{"com.linkedin.voyager.messaging.event.MessageEvent":{"attributedBody":"bare snippet"}}}
-  ]}`
+// conversationsFixture is a GraphQL messenger conversations page. It exercises the participant
+// shapes the parser tolerates: attributed {text} names (Alice), a bare-string name (Bob), and a
+// non-member participant variant that yields no name (an org/bot participant is skipped). Each
+// conversation carries an embedded latest message as the inbox snippet.
+const conversationsFixture = `{"data":{"messengerConversationsBySyncToken":{"elements":[
+  {"entityUrn":"urn:li:msg_conversation:2-AAA==","lastActivityAt":1721500000000,
+   "conversationParticipants":[
+     {"participantType":{"member":{"firstName":{"text":"Alice"},"lastName":{"text":"Smith"}}}},
+     {"participantType":{"organization":{"name":{"text":"Acme"}}}}],
+   "messages":{"elements":[{"deliveredAt":1721500000000,"body":{"text":"hey there"}}]}},
+  {"entityUrn":"urn:li:msg_conversation:2-BBB==","lastActivityAt":1721600000000,
+   "conversationParticipants":[
+     {"participantType":{"member":{"firstName":"Bob","lastName":"Jones"}}}],
+   "messages":{"elements":[{"deliveredAt":1721600000000,"body":{"text":"bare snippet"}}]}}
+]}}}`
 
 func TestParseConversations(t *testing.T) {
 	convs, err := ParseConversations(json.RawMessage(conversationsFixture))
@@ -43,93 +30,109 @@ func TestParseConversations(t *testing.T) {
 	require.Len(t, convs, 2)
 
 	// Most recent first: BBB (1721600000000) before AAA.
-	assert.Equal(t, "2-BBB==", convs[0].ID)
-	assert.Equal(t, []string{"Bob Jones"}, convs[0].Participants, "inline miniProfile name")
-	assert.Equal(t, "bare snippet", convs[0].Snippet, "bare-string attributedBody tolerated")
+	assert.Equal(t, "urn:li:msg_conversation:2-BBB==", convs[0].ID, "id is the full URN read/send accept")
+	assert.Equal(t, "urn:li:msg_conversation:2-BBB==", convs[0].URN)
+	assert.Equal(t, []string{"Bob Jones"}, convs[0].Participants, "bare-string name tolerated")
+	assert.Equal(t, "bare snippet", convs[0].Snippet)
 	assert.Equal(t, int64(1721600000000), convs[0].LastActivityAt)
 
-	assert.Equal(t, "2-AAA==", convs[1].ID)
-	assert.Equal(t, []string{"Alice Smith"}, convs[1].Participants, "*miniProfile reference resolved")
+	assert.Equal(t, "urn:li:msg_conversation:2-AAA==", convs[1].ID)
+	assert.Equal(t, []string{"Alice Smith"}, convs[1].Participants, "non-member participant skipped")
 	assert.Equal(t, "hey there", convs[1].Snippet)
-	assert.NotEmpty(t, convs[1].Raw, "full entity preserved for -o json")
+	assert.NotEmpty(t, convs[1].Raw, "full element preserved for -o json")
 }
 
 func TestParseConversations_EmptyInboxIsFine(t *testing.T) {
-	raw := json.RawMessage(`{"data":{"data":{"paging":{"total":0,"start":0,"count":0},"*elements":[]}},"included":[]}`)
+	raw := json.RawMessage(`{"data":{"messengerConversationsBySyncToken":{"elements":[]}}}`)
 	convs, err := ParseConversations(raw)
 	require.NoError(t, err)
 	assert.Empty(t, convs)
 }
 
 func TestParseConversations_SchemaMoved(t *testing.T) {
-	// Positive total but zero recognizable conversation entities ⇒ the schema rotated.
-	raw := json.RawMessage(`{"data":{"data":{"paging":{"total":3,"start":0,"count":3},"*elements":[]}},
-	  "included":[{"$type":"com.linkedin.voyager.messaging.SomethingNew","entityUrn":"urn:x:1"}]}`)
+	// The result container is absent (a rotated queryId / renamed field) ⇒ moved, not empty.
+	raw := json.RawMessage(`{"data":{"someRenamedField":{"elements":[]}}}`)
 	_, err := ParseConversations(raw)
 	require.ErrorIs(t, err, ErrMessagingSchemaMoved)
 	assert.Contains(t, err.Error(), "internal/voyager/schema.go")
 }
 
-// eventsFixture arrives deliberately out of order; message 2 uses an inline (type-keyed)
-// `from` and a plain `body` fallback instead of attributedBody.
-const eventsFixture = `{
-  "data":{"data":{"paging":{"total":2,"start":0,"count":2},"*elements":[
-    "urn:li:fs_event:(2-AAA==,S2)","urn:li:fs_event:(2-AAA==,S1)"]}},
-  "included":[
-    {"$type":"com.linkedin.voyager.messaging.Event","entityUrn":"urn:li:fs_event:(2-AAA==,S2)",
-     "createdAt":1721502000000,
-     "from":{"com.linkedin.voyager.messaging.MessagingMember":{"miniProfile":{"firstName":"Bob","lastName":"Jones"}}},
-     "eventContent":{"com.linkedin.voyager.messaging.event.MessageEvent":{"body":"second message"}}},
-    {"$type":"com.linkedin.voyager.messaging.Event","entityUrn":"urn:li:fs_event:(2-AAA==,S1)",
-     "createdAt":1721501000000,"*from":"urn:li:fs_messagingMember:(2-AAA==,ACoAA1)",
-     "eventContent":{"com.linkedin.voyager.messaging.event.MessageEvent":{"attributedBody":{"text":"first message","attributes":[]}}}},
-    {"$type":"com.linkedin.voyager.messaging.MessagingMember","entityUrn":"urn:li:fs_messagingMember:(2-AAA==,ACoAA1)",
-     "*miniProfile":"urn:li:fs_miniProfile:ACoAA1"},
-    {"$type":"com.linkedin.voyager.identity.shared.MiniProfile","entityUrn":"urn:li:fs_miniProfile:ACoAA1",
-     "firstName":"Alice","lastName":"Smith"}
-  ]}`
+// eventsFixture arrives deliberately out of order to prove oldest→newest sorting.
+const eventsFixture = `{"data":{"messengerMessagesByAnchorTimestamp":{"elements":[
+  {"entityUrn":"urn:li:msg_message:S2","deliveredAt":1721502000000,
+   "sender":{"participantType":{"member":{"firstName":{"text":"Bob"},"lastName":{"text":"Jones"}}}},
+   "body":{"text":"second message"}},
+  {"entityUrn":"urn:li:msg_message:S1","deliveredAt":1721501000000,
+   "sender":{"participantType":{"member":{"firstName":{"text":"Alice"},"lastName":{"text":"Smith"}}}},
+   "body":{"text":"first message"}}
+]}}}`
 
-func TestParseEvents(t *testing.T) {
-	msgs, err := ParseEvents(json.RawMessage(eventsFixture))
+func TestParseMessages(t *testing.T) {
+	msgs, err := ParseMessages(json.RawMessage(eventsFixture))
 	require.NoError(t, err)
 	require.Len(t, msgs, 2)
 
 	// Oldest → newest regardless of wire order.
 	assert.Equal(t, "first message", msgs[0].Text)
-	assert.Equal(t, "Alice Smith", msgs[0].Sender, "*from reference resolved")
+	assert.Equal(t, "Alice Smith", msgs[0].Sender)
 	assert.Equal(t, int64(1721501000000), msgs[0].CreatedAt)
 
-	assert.Equal(t, "second message", msgs[1].Text, "plain body fallback")
-	assert.Equal(t, "Bob Jones", msgs[1].Sender, "inline type-keyed from resolved")
+	assert.Equal(t, "second message", msgs[1].Text)
+	assert.Equal(t, "Bob Jones", msgs[1].Sender)
 	assert.NotEmpty(t, msgs[1].Raw)
 }
 
-func TestParseEvents_FlattenedAttributedBody(t *testing.T) {
-	raw := json.RawMessage(`{"data":{},"included":[
-	  {"$type":"com.linkedin.voyager.messaging.Event","entityUrn":"urn:li:fs_event:(2-C==,S9)",
-	   "createdAt":1,"eventContent":{"attributedBody":{"text":"flat variant"}}}]}`)
-	msgs, err := ParseEvents(raw)
+func TestParseMessages_MissingSenderNameTolerated(t *testing.T) {
+	raw := json.RawMessage(`{"data":{"messengerMessagesByAnchorTimestamp":{"elements":[
+	  {"deliveredAt":1,"sender":{"participantType":{}},"body":{"text":"anon"}}]}}}`)
+	msgs, err := ParseMessages(raw)
 	require.NoError(t, err)
 	require.Len(t, msgs, 1)
-	assert.Equal(t, "flat variant", msgs[0].Text)
+	assert.Equal(t, "anon", msgs[0].Text)
+	assert.Empty(t, msgs[0].Sender, "a missing member yields an empty sender, not a crash")
 }
 
-func TestParseEvents_SchemaMoved(t *testing.T) {
-	raw := json.RawMessage(`{"data":{"data":{"paging":{"total":5,"start":0,"count":5},"*elements":[]}},"included":[]}`)
-	_, err := ParseEvents(raw)
+func TestParseMessages_SchemaMoved(t *testing.T) {
+	raw := json.RawMessage(`{"data":{"otherField":{}}}`)
+	_, err := ParseMessages(raw)
 	require.ErrorIs(t, err, ErrMessagingSchemaMoved)
 }
 
-func TestParseEvents_EmptyThreadIsFine(t *testing.T) {
-	raw := json.RawMessage(`{"data":{"data":{"paging":{"total":0,"start":0,"count":0},"*elements":[]}},"included":[]}`)
-	msgs, err := ParseEvents(raw)
+func TestParseMessages_EmptyThreadIsFine(t *testing.T) {
+	raw := json.RawMessage(`{"data":{"messengerMessagesByAnchorTimestamp":{"elements":[]}}}`)
+	msgs, err := ParseMessages(raw)
 	require.NoError(t, err)
 	assert.Empty(t, msgs)
 }
 
-func TestParseConversations_BadJSON(t *testing.T) {
+func TestParseMessaging_BadJSON(t *testing.T) {
 	_, err := ParseConversations(json.RawMessage(`{`))
 	require.Error(t, err)
-	_, err = ParseEvents(json.RawMessage(`{`))
+	_, err = ParseMessages(json.RawMessage(`{`))
 	require.Error(t, err)
+}
+
+func TestMailboxURNFromMe(t *testing.T) {
+	// dashEntityUrn is preferred verbatim.
+	urn, err := MailboxURNFromMe(json.RawMessage(
+		`{"miniProfile":{"entityUrn":"urn:li:fs_miniProfile:ACoAA1","dashEntityUrn":"urn:li:fsd_profile:ACoAA1"}}`))
+	require.NoError(t, err)
+	assert.Equal(t, "urn:li:fsd_profile:ACoAA1", urn)
+
+	// Absent dashEntityUrn ⇒ convert fs_miniProfile → fsd_profile.
+	urn, err = MailboxURNFromMe(json.RawMessage(`{"miniProfile":{"entityUrn":"urn:li:fs_miniProfile:ACoAA9"}}`))
+	require.NoError(t, err)
+	assert.Equal(t, "urn:li:fsd_profile:ACoAA9", urn)
+
+	// Neither ⇒ /me shape moved.
+	_, err = MailboxURNFromMe(json.RawMessage(`{"miniProfile":{}}`))
+	require.ErrorIs(t, err, ErrMessagingSchemaMoved)
+
+	_, err = MailboxURNFromMe(json.RawMessage(`{`))
+	require.Error(t, err)
+}
+
+func TestEnsureConversationURN(t *testing.T) {
+	assert.Equal(t, "urn:li:msg_conversation:2-AAA==", EnsureConversationURN("2-AAA=="))
+	assert.Equal(t, "urn:li:msg_conversation:2-AAA==", EnsureConversationURN("urn:li:msg_conversation:2-AAA=="))
 }
