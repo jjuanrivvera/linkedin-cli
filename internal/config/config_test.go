@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,10 +19,13 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	c.Aliases = map[string]string{"go": "jobs search --skill golang"}
 	require.NoError(t, c.Save())
 
-	// File perms must be 0600.
-	info, err := os.Stat(p)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	// File perms must be 0600. Windows has no POSIX permission bits (Stat reports 0666),
+	// so the assertion only holds on Unix.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(p)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 
 	got, err := LoadFrom(p)
 	require.NoError(t, err)
