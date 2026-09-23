@@ -83,13 +83,23 @@ func (e *env) deps() *deps {
 		url := e.srv.URL
 		httpc := e.srv.Client()
 		tmp := e.tmp
+		gf := d.gf
 		d.newClient = func(_, _ string, opts ...api.Option) *api.Client {
 			// Force both hosts at the mock server, disable retry, and override the real
-			// 3–15s pacer with a zero-delay one (fast tests, isolated daily-cap state).
+			// 3–15s pacer with a zero-delay one (fast tests, isolated daily-cap state). The
+			// daily caps honor the global-flag overrides so a test can drive cap exhaustion.
+			sendCap := 20
+			if gf.dailySendCap > 0 {
+				sendCap = gf.dailySendCap
+			}
+			dailyCap := 30
+			if gf.dailyCap > 0 {
+				dailyCap = gf.dailyCap
+			}
 			opts = append(opts,
 				api.WithHTTPClient(httpc),
 				api.WithMaxRetries(0),
-				api.WithPacer(&api.Pacer{DailyCap: 30, StatePath: filepath.Join(tmp, "state.json")}),
+				api.WithPacer(&api.Pacer{DailyCap: dailyCap, DailySendCap: sendCap, StatePath: filepath.Join(tmp, "state.json")}),
 			)
 			return api.NewClientWithBaseURL(url, opts...)
 		}

@@ -1,15 +1,22 @@
-## linkedin agent
+## linkedin messages
 
-AI-agent integration helpers
+Read and send LinkedIn messages (⚠ elevated ban risk)
 
 ### Synopsis
 
-Generate safety configuration for AI agents that drive linkedin.
+List your conversations, read a thread, and send a text message via LinkedIn's GraphQL
+messenger endpoints. Conversation ids are full msg_conversation URNs; the id printed by
+`messages list` is exactly what `read` and `send` accept.
+
+⚠ UNOFFICIAL API — ELEVATED ACCOUNT-RESTRICTION RISK. Messaging drives LinkedIn's private
+GraphQL messenger endpoints with YOUR session. Automated messaging is the classic trigger for
+a LinkedIn account restriction: keep volume very low, write like a human, and prefer reading
+over sending. Sends are confirmation-gated and capped (default 20/day, --daily-send-cap).
 
 ### Options
 
 ```
-  -h, --help   help for agent
+  -h, --help   help for messages
 ```
 
 ### Options inherited from parent commands
@@ -36,5 +43,7 @@ Generate safety configuration for AI agents that drive linkedin.
 ### SEE ALSO
 
 * [linkedin](linkedin.md)	 - An agent-friendly CLI for LinkedIn job search and messaging (unofficial Voyager API)
-* [linkedin agent guard](linkedin_agent_guard.md)	 - Generate agent-safety config that blocks destructive linkedin operations
+* [linkedin messages list](linkedin_messages_list.md)	 - List your conversations (most recent first)
+* [linkedin messages read](linkedin_messages_read.md)	 - Print one conversation's message thread (oldest first)
+* [linkedin messages send](linkedin_messages_send.md)	 - Send a text message to an existing conversation (⚠ ban-risk; confirmation-gated)
 

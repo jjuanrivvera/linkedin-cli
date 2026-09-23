@@ -38,6 +38,7 @@ linkedin doctor [flags]
       --columns strings       comma-separated columns to show
       --count int             results per page (search commands) (default 25)
       --daily-cap int         override the ban-safety daily job-detail fetch cap (0 keeps the default of 30)
+      --daily-send-cap int    override the ban-safety daily message-send cap (0 keeps the default of 20)
       --dry-run               print the equivalent curl and make no request
       --jq string             gojq expression applied to the response before rendering
       --limit int             max items to return across pages (search commands)
@@ -52,5 +53,5 @@ linkedin doctor [flags]
 
 ### SEE ALSO
 
-* [linkedin](linkedin.md)	 - A read-only, agent-friendly CLI for LinkedIn job search (unofficial Voyager API)
+* [linkedin](linkedin.md)	 - An agent-friendly CLI for LinkedIn job search and messaging (unofficial Voyager API)
 

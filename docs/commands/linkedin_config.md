@@ -21,6 +21,7 @@ Any bearer token lives in the OS keyring — never here.
       --columns strings       comma-separated columns to show
       --count int             results per page (search commands) (default 25)
       --daily-cap int         override the ban-safety daily job-detail fetch cap (0 keeps the default of 30)
+      --daily-send-cap int    override the ban-safety daily message-send cap (0 keeps the default of 20)
       --dry-run               print the equivalent curl and make no request
       --jq string             gojq expression applied to the response before rendering
       --limit int             max items to return across pages (search commands)
@@ -35,7 +36,7 @@ Any bearer token lives in the OS keyring — never here.
 
 ### SEE ALSO
 
-* [linkedin](linkedin.md)	 - A read-only, agent-friendly CLI for LinkedIn job search (unofficial Voyager API)
+* [linkedin](linkedin.md)	 - An agent-friendly CLI for LinkedIn job search and messaging (unofficial Voyager API)
 * [linkedin config list-profiles](linkedin_config_list-profiles.md)	 - List configured profiles
 * [linkedin config path](linkedin_config_path.md)	 - Print the config file path
 * [linkedin config set](linkedin_config_set.md)	 - Set a per-profile option (voyager_base_url, web_base_url)
