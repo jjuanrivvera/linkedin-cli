@@ -15,6 +15,8 @@
 
 [Documentation](https://jjuanrivvera.github.io/linkedin-cli/) · [Command reference](https://jjuanrivvera.github.io/linkedin-cli/commands/linkedin/)
 
+![linkedin in action](assets/demo.gif)
+
 </div>
 
 `linkedin` is a fast, scriptable, **read-only** command-line client for LinkedIn's internal
