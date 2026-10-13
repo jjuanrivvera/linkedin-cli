@@ -1,6 +1,6 @@
 module github.com/jjuanrivvera/linkedin-cli
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/browserutils/kooky v0.2.10
