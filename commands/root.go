@@ -36,6 +36,7 @@ type globalFlags struct {
 	quiet          bool
 	jq             string
 	dailyCap       int // override the ban-safety daily job-detail cap (0 = keep default)
+	dailySendCap   int // override the ban-safety daily message-send cap (0 = keep default)
 
 	// list flags (read by search commands)
 	all   bool
@@ -83,22 +84,26 @@ var metaRegistrars []func(d *deps) *cobra.Command
 func newRootCmd(d *deps) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "linkedin",
-		Short: "A read-only, agent-friendly CLI for LinkedIn job search (unofficial Voyager API)",
-		Long: `linkedin is a READ-ONLY client for LinkedIn's internal Voyager API: search jobs, fetch a
-job's detail, look up a company, and resolve a location to a geoId — with machine-first output
-(JSON/YAML/CSV, -o id, --jq) for pipelines and AI agents.
+		Short: "An agent-friendly CLI for LinkedIn job search and messaging (unofficial Voyager API)",
+		Long: `linkedin is a READ-FIRST client for LinkedIn's internal Voyager API: search jobs, fetch a
+job's detail, look up a company, resolve a location to a geoId, and read your message inbox —
+with machine-first output (JSON/YAML/CSV, -o id, --jq) for pipelines and AI agents. The ONE
+write is ` + "`messages send`" + `, which is confirmation-gated and daily-capped.
 
 ⚠ UNOFFICIAL API — USE-AT-YOUR-OWN-RISK. This drives the same private endpoints linkedin.com's
 web app calls, using YOUR browser session cookies. It is not sanctioned by LinkedIn and may
-violate the LinkedIn User Agreement. Ban-safety defaults are ON (human-paced delays, a daily
-fetch cap, no retry on throttles) — keep volume low, use your own account on your own machine.
+violate the LinkedIn User Agreement. Ban-safety defaults are ON (human-paced delays, daily
+fetch/send caps, no retry on throttles) — keep volume low, use your own account on your own
+machine. Automated MESSAGING is the classic account-restriction trigger; treat ` + "`messages send`" + `
+as the riskiest command here.
 
 Authenticate by borrowing your browser session:
   linkedin auth --cookie-from-browser chrome
   linkedin jobs search --keywords "golang" --remote --since 7d -o json
   linkedin jobs get 4012345678 -o json
   linkedin company get stripe
-  linkedin geo "Bogota, Colombia"`,
+  linkedin geo "Bogota, Colombia"
+  linkedin messages list`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
@@ -139,6 +144,7 @@ func registerGlobalFlags(root *cobra.Command, gf *globalFlags) {
 	pf.BoolVar(&gf.quiet, "quiet", false, "suppress non-essential chatter")
 	pf.StringVar(&gf.jq, "jq", "", "gojq expression applied to the response before rendering")
 	pf.IntVar(&gf.dailyCap, "daily-cap", 0, "override the ban-safety daily job-detail fetch cap (0 keeps the default of 30)")
+	pf.IntVar(&gf.dailySendCap, "daily-send-cap", 0, "override the ban-safety daily message-send cap (0 keeps the default of 20)")
 
 	pf.BoolVar(&gf.all, "all", false, "page through all results (search commands)")
 	pf.IntVar(&gf.limit, "limit", 0, "max items to return across pages (search commands)")
@@ -179,6 +185,9 @@ func (d *deps) getAPIClient() (*api.Client, *config.Config, error) {
 	pacer := api.DefaultPacer(filepath.Join(dir, "state.json"))
 	if d.gf.dailyCap > 0 {
 		pacer.DailyCap = d.gf.dailyCap
+	}
+	if d.gf.dailySendCap > 0 {
+		pacer.DailySendCap = d.gf.dailySendCap
 	}
 
 	store := d.store()

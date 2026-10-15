@@ -5,17 +5,18 @@ Generate agent-safety config that blocks destructive linkedin operations
 ### Synopsis
 
 Classify every API command (read / write / irreversible) from the live command tree
-and emit host safety config. linkedin is a READ-ONLY client — every command (including the
-GET-only "linkedin api" escape hatch) is a read, so today the guard allows all API commands
-and hard-blocks nothing except "linkedin alias set" (minting a shorthand). The guard derives
-from the LIVE tree, so if a future write/destructive command is ever added it is hard-blocked
-automatically, including its cobra alias paths.
+and emit host safety config. linkedin is READ-FIRST: every command (including the GET-only
+"linkedin api" escape hatch) is a read EXCEPT "linkedin messages send", which classifies as
+irreversible (a sent DM cannot be unsent, and automated messaging is the classic LinkedIn
+account-restriction trigger) and is hard-blocked, together with "linkedin alias set" (minting
+a shorthand). The guard derives from the LIVE tree, so any future write/destructive command
+is hard-blocked automatically, including its cobra alias paths.
 
 For claude-code the output also includes a PreToolUse hook script
 (.claude/hooks/linkedin-guard.sh): it strips quote/backslash obfuscation and matches blocked
 subcommand paths at the command position even for path-invoked binaries (./bin/linkedin,
 /usr/local/bin/linkedin). "linkedin alias set" is denied so an agent cannot mint a new
-shorthand for a future blocked command.
+shorthand for a blocked command.
 
 MCP-only operation is the hard guarantee; the Bash rails are best-effort — the hook
 defeats quoting tricks and path prefixes, but not variable indirection or shell aliases.
@@ -53,6 +54,7 @@ linkedin agent guard --host <claude-code|codex|opencode> [flags]
       --columns strings       comma-separated columns to show
       --count int             results per page (search commands) (default 25)
       --daily-cap int         override the ban-safety daily job-detail fetch cap (0 keeps the default of 30)
+      --daily-send-cap int    override the ban-safety daily message-send cap (0 keeps the default of 20)
       --dry-run               print the equivalent curl and make no request
       --jq string             gojq expression applied to the response before rendering
       --limit int             max items to return across pages (search commands)
