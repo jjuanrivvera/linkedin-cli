@@ -66,8 +66,8 @@ homebrew_casks:
     homepage: https://github.com/jjuanrivvera/linkedin-cli
     hooks:
       post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/linkedin"]
+        install_steps: |
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/linkedin"]
 
 scoops:
   - repository: { owner: jjuanrivvera, name: scoop-linkedin-cli, token: "{{ .Env.HOMEBREW_TAP_TOKEN }}" }   # bucket repo must already exist; cross-repo token
