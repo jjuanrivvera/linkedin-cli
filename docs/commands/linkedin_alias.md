@@ -20,6 +20,7 @@ Define shorthand commands. Aliases are expanded before parsing and can never sha
       --columns strings       comma-separated columns to show
       --count int             results per page (search commands) (default 25)
       --daily-cap int         override the ban-safety daily job-detail fetch cap (0 keeps the default of 30)
+      --daily-send-cap int    override the ban-safety daily message-send cap (0 keeps the default of 20)
       --dry-run               print the equivalent curl and make no request
       --jq string             gojq expression applied to the response before rendering
       --limit int             max items to return across pages (search commands)
@@ -34,7 +35,7 @@ Define shorthand commands. Aliases are expanded before parsing and can never sha
 
 ### SEE ALSO
 
-* [linkedin](linkedin.md)	 - A read-only, agent-friendly CLI for LinkedIn job search (unofficial Voyager API)
+* [linkedin](linkedin.md)	 - An agent-friendly CLI for LinkedIn job search and messaging (unofficial Voyager API)
 * [linkedin alias list](linkedin_alias_list.md)	 - List aliases
 * [linkedin alias remove](linkedin_alias_remove.md)	 - Remove an alias
 * [linkedin alias set](linkedin_alias_set.md)	 - Create or update an alias

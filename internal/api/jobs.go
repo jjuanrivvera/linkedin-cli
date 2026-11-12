@@ -164,7 +164,31 @@ func buildQueryBlob(f SearchFilters) string {
 		parts = append(parts, voyager.QuerySelectedTypes+":("+sel+")")
 	}
 	parts = append(parts, voyager.QuerySpellCorrect+":true")
+	return wrapBlob(parts)
+}
+
+// wrapBlob wraps already-built `key:value` parts in the Rest.li `(a,b,c)` structure, keeping
+// the structural chars literal. Shared by the job-search query blob and the messenger GraphQL
+// variables blob (buildVariablesBlob).
+func wrapBlob(parts []string) string {
 	return "(" + strings.Join(parts, ",") + ")"
+}
+
+// buildVariablesBlob builds a GraphQL `variables=(k1:v1,k2:v2)` blob the same BY-HAND way as the
+// job-search query blob: structural chars (`(),:`) stay literal, only each VALUE is URL-escaped
+// (so a URN's own colons become %3A). url.Values would corrupt the structure.
+func buildVariablesBlob(pairs [][2]string) string {
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		v := escapeValue(p[1])
+		if p[1] == mailboxURNPlaceholder {
+			// Dry-run placeholder: keep it human-readable in the previewed curl, exactly like
+			// GeoIDPlaceholder in the job-search blob (a real mailbox URN never equals it).
+			v = p[1]
+		}
+		parts[i] = p[0] + ":" + v
+	}
+	return wrapBlob(parts)
 }
 
 // buildSelectedFilters builds the selectedFilters inner blob: List(...) per active filter.
