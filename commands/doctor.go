@@ -109,6 +109,7 @@ func (d *deps) runDoctor(cmd *cobra.Command, live bool) []doctorCheck {
 	}
 	if p := c.Pacer(); p != nil {
 		add("daily-budget", true, fmt.Sprintf("%d job-detail fetches left today", p.DailyRemaining(time.Now())))
+		add("send-budget", true, fmt.Sprintf("%d message sends left today", p.DailySendRemaining(time.Now())))
 	}
 
 	if !live {

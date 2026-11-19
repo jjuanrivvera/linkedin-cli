@@ -10,9 +10,11 @@ metadata: {"openclaw":{"category":"jobs","emoji":"💼","requires":{"bins":["lin
 
 # linkedin — LinkedIn job-search CLI
 
-`linkedin` is a **read-only** client for LinkedIn's internal **Voyager** API. Prefer it over raw
+`linkedin` is a **read-first** client for LinkedIn's internal **Voyager** API. Prefer it over raw
 `curl`: it builds the tricky Rest.li job-search query correctly, borrows your browser session,
-paces requests for ban-safety, and emits clean JSON / `-o id` / `--jq` output.
+paces requests for ban-safety, and emits clean JSON / `-o id` / `--jq` output. It also reads your
+message inbox; the one write, `messages send`, is confirmation-gated, daily-capped, and classified
+destructive (never auto-approved by an agent).
 
 ## ⚠️ Unofficial API — ban-risk disclaimer (read first)
 
